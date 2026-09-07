@@ -1,26 +1,30 @@
-// Tab "Más" (manual.md sección 9): agrupa Perfil y Configuración. Todavía no
-// tienen pantalla propia; por ahora solo vive acá el botón de cerrar sesión
-// (antes estaba en la home provisoria de módulo 1).
+// Tab "Más" (manual.md sección 9): agrupa Perfil y Configuración.
 
-import { logout } from '@/app/login/actions'
+import { createClient } from '@/lib/supabase/server'
+import MasClient from './MasClient'
 
-export default function MasPage() {
+export default async function MasPage() {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  // El layout ya garantiza que hay sesión y perfil; user siempre existe acá.
+  const userId = user!.id
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('name, base_income, auto_repeat_income')
+    .eq('id', userId)
+    .single()
+
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
-      <h1 className="text-xl font-semibold tracking-tight">Más</h1>
-
-      <p className="text-sm text-zinc-500">
-        Perfil, configuración y el toggle de ingreso automático llegan en un próximo módulo.
-      </p>
-
-      <form action={logout}>
-        <button
-          type="submit"
-          className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-        >
-          Cerrar sesión
-        </button>
-      </form>
+      <MasClient
+        email={user!.email ?? ''}
+        name={profile?.name ?? ''}
+        baseIncome={profile?.base_income ?? 0}
+        autoRepeatIncome={profile?.auto_repeat_income ?? true}
+      />
     </div>
   )
 }
