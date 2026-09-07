@@ -16,6 +16,7 @@ import {
 import { isAutoPayDue } from '@/lib/debts'
 import { computeDominoPillarAdjustments } from '@/lib/domino'
 import { formatBs } from '@/lib/format'
+import { closeElapsedMonths, getCarriedOverByPillarId } from '@/lib/monthClose'
 import QuickAddForm from './QuickAddForm'
 
 const PILLAR_LABEL: Record<PillarName, string> = {
@@ -31,6 +32,11 @@ export default async function DashboardPage() {
   } = await supabase.auth.getUser()
   // El layout ya garantiza que hay sesión y perfil; user siempre existe acá.
   const userId = user!.id
+
+  // Cierre de meses ya terminados (manual §3.3/§8): aritmética sobre algo
+  // que no puede cambiar más, no crea ninguna transacción — se hace antes
+  // de calcular nada del mes en curso para que el arrastre esté listo.
+  await closeElapsedMonths(supabase, userId)
 
   const { start, end } = monthRangeInBolivia()
   const { startUtc, endUtc } = monthRangeUtcInstant()
@@ -104,7 +110,7 @@ export default async function DashboardPage() {
     pendingAutoPayCount = dueAutoPayDebts.filter((d) => !yaConfirmados.has(d.id)).length
   }
 
-  const [{ data: profile }, { data: pillars }, { data: transactions }, { data: dominoEvents }] =
+  const [{ data: profile }, { data: pillars }, { data: transactions }, { data: dominoEvents }, carriedOverByPillarId] =
     await Promise.all([
       supabase.from('profiles').select('base_income').eq('id', userId).single(),
       supabase.from('pillars').select('id, name, percentage').eq('user_id', userId),
@@ -120,6 +126,7 @@ export default async function DashboardPage() {
         .eq('user_id', userId)
         .gte('created_at', startUtc)
         .lt('created_at', endUtc),
+      getCarriedOverByPillarId(supabase, userId, today.year, today.month),
     ])
 
   const ahorroPillarId = pillars?.find((p) => p.name === 'ahorro')?.id ?? ''
@@ -142,6 +149,7 @@ export default async function DashboardPage() {
     transactionsThisMonth: transactions ?? [],
     fixedCategories,
     dominoPillarAdjustments,
+    carriedOverByPillarId,
   })
 
   const activeCategories = (categories ?? []).filter((c) => !c.deleted_at)

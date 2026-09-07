@@ -27,10 +27,17 @@ export function daysInMonth(year: number, month1to12: number): number {
   return new Date(year, month1to12, 0).getDate()
 }
 
-// Rango [primer día, último día] del mes en curso (hora boliviana), para
+// Igual que todayInBolivia(), pero para convertir un Date cualquiera (ej.
+// profiles.created_at) a año/mes/día en huso boliviano.
+export function dateInBolivia(date: Date): { year: number; month: number; day: number } {
+  const iso = new Intl.DateTimeFormat('en-CA', { timeZone: BOLIVIA_TZ }).format(date)
+  const [year, month, day] = iso.split('-').map(Number)
+  return { year, month, day }
+}
+
+// Rango [primer día, último día] de un mes dado (hora boliviana), para
 // filtrar transactions.date en la consulta a Supabase.
-export function monthRangeInBolivia(): { start: string; end: string } {
-  const { year, month } = todayInBolivia()
+export function monthRangeFor(year: number, month: number): { start: string; end: string } {
   const pad = (n: number) => String(n).padStart(2, '0')
   const lastDay = daysInMonth(year, month)
   return {
@@ -39,11 +46,15 @@ export function monthRangeInBolivia(): { start: string; end: string } {
   }
 }
 
-// Igual que monthRangeInBolivia, pero como instantes UTC — para filtrar
-// columnas timestamptz (domino_events.created_at), donde comparar strings de
-// fecha no sirve. Medianoche en Bolivia = 04:00 UTC (sin horario de verano).
-export function monthRangeUtcInstant(): { startUtc: string; endUtc: string } {
+export function monthRangeInBolivia(): { start: string; end: string } {
   const { year, month } = todayInBolivia()
+  return monthRangeFor(year, month)
+}
+
+// Igual que monthRangeFor, pero como instantes UTC — para filtrar columnas
+// timestamptz (domino_events.created_at), donde comparar strings de fecha no
+// sirve. Medianoche en Bolivia = 04:00 UTC (sin horario de verano).
+export function monthRangeUtcInstantFor(year: number, month: number): { startUtc: string; endUtc: string } {
   const nextMonth = month === 12 ? 1 : month + 1
   const nextYear = month === 12 ? year + 1 : year
   return {
@@ -52,7 +63,12 @@ export function monthRangeUtcInstant(): { startUtc: string; endUtc: string } {
   }
 }
 
-export type PillarSummary = { id: string; pillar: PillarName; budget: number; saldo: number }
+export function monthRangeUtcInstant(): { startUtc: string; endUtc: string } {
+  const { year, month } = todayInBolivia()
+  return monthRangeUtcInstantFor(year, month)
+}
+
+export type PillarSummary = { id: string; pillar: PillarName; budget: number; carriedOver: number; saldo: number }
 export type DashboardData = {
   pillars: PillarSummary[]
   dailyBudget: number
@@ -72,6 +88,10 @@ export function computeDashboard(input: {
   // sigan apretados por un déficit que el usuario ya cubrió). Ver
   // lib/domino.ts — computeDominoPillarAdjustments.
   dominoPillarAdjustments?: Record<string, number>
+  // Arrastre de saldo entre meses (manual §3.3): saldo que sobró/faltó en el
+  // mes anterior de cada pilar. 0 si no viene (o si no hay mes anterior
+  // cerrado todavía). Ver lib/monthClose.ts.
+  carriedOverByPillarId?: Record<string, number>
   today?: { year: number; month: number; day: number }
 }): DashboardData {
   const today = input.today ?? todayInBolivia()
@@ -93,19 +113,19 @@ export function computeDashboard(input: {
       .filter((c) => c.pillar_id === pillar.id)
       .reduce((sum, c) => sum + c.fixed_amount, 0)
 
-    // "carried_over" del mes anterior queda en 0: todavía no existe un cierre
-    // de mes que persista el arrastre entre meses (fuera de alcance).
     const movimientos = input.transactionsThisMonth
       .filter((t) => t.pillar_id === pillar.id && !fixedCategoryIds.has(t.category_id ?? ''))
       .reduce((sum, t) => sum + t.amount, 0)
 
     const dominoAdjustment = input.dominoPillarAdjustments?.[pillar.id] ?? 0
+    const carriedOver = input.carriedOverByPillarId?.[pillar.id] ?? 0
 
     return {
       id: pillar.id,
       pillar: pillar.name,
       budget,
-      saldo: budget - fixedTotal + movimientos - dominoAdjustment,
+      carriedOver,
+      saldo: budget + carriedOver - fixedTotal + movimientos - dominoAdjustment,
     }
   })
 

@@ -10,6 +10,7 @@ import {
   type CategoryFixedRow,
 } from '@/lib/dashboard'
 import { EPSILON, buildCaso1Message, computeDominoPillarAdjustments } from '@/lib/domino'
+import { getCarriedOverByPillarId } from '@/lib/monthClose'
 
 export type RegisterTransactionInput = {
   type: 'expense' | 'extra_income'
@@ -137,9 +138,10 @@ async function checkDominoAfterTransaction(
 ): Promise<DominoOutcome | undefined> {
   const { start, end } = monthRangeInBolivia()
   const { startUtc, endUtc } = monthRangeUtcInstant()
-  const todayIso = todayInBolivia().iso
+  const today = todayInBolivia()
+  const todayIso = today.iso
 
-  const [{ data: profile }, { data: pillars }, { data: categories }, { data: transactions }, { data: dominoEvents }] =
+  const [{ data: profile }, { data: pillars }, { data: categories }, { data: transactions }, { data: dominoEvents }, carriedOverByPillarId] =
     await Promise.all([
       supabase.from('profiles').select('base_income').eq('id', ctx.userId).single(),
       supabase.from('pillars').select('id, name, percentage').eq('user_id', ctx.userId),
@@ -159,6 +161,7 @@ async function checkDominoAfterTransaction(
         .eq('user_id', ctx.userId)
         .gte('created_at', startUtc)
         .lt('created_at', endUtc),
+      getCarriedOverByPillarId(supabase, ctx.userId, today.year, today.month),
     ])
 
   const gastoPillar = pillars?.find((p) => p.name === 'gasto')
@@ -184,6 +187,7 @@ async function checkDominoAfterTransaction(
     pillars,
     fixedCategories,
     dominoPillarAdjustments,
+    carriedOverByPillarId,
   }
   const dashboardAfter = computeDashboard({ ...base, transactionsThisMonth: allTx })
   const dashboardBefore = computeDashboard({ ...base, transactionsThisMonth: beforeTodayTx })
