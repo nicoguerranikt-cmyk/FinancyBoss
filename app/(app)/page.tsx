@@ -3,14 +3,17 @@
 // saldos en tiempo real de cada pilar y el acceso rápido para registrar un
 // movimiento.
 
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import {
   computeDashboard,
   monthRangeInBolivia,
   monthRangeUtcInstant,
+  todayInBolivia,
   type CategoryFixedRow,
   type PillarName,
 } from '@/lib/dashboard'
+import { isAutoPayDue } from '@/lib/debts'
 import { computeDominoPillarAdjustments } from '@/lib/domino'
 import { formatBs } from '@/lib/format'
 import QuickAddForm from './QuickAddForm'
@@ -73,7 +76,35 @@ export default async function DashboardPage() {
     }
   }
 
-  const [{ data: profile }, { data: pillars }, { data: transactions }, { data: debts }, { data: dominoEvents }] =
+  // Deudas con plan de pago automático (manual §6.2): es un recordatorio,
+  // NUNCA se descuenta solo por haber llegado la fecha — el usuario confirma
+  // desde /deudas con el botón "Ya la pagué". Acá solo contamos cuántas
+  // están pendientes de confirmar, para el aviso de abajo.
+  const today = todayInBolivia()
+  const { data: autoPayDebts } = await supabase
+    .from('debts')
+    .select(
+      'id, monthly_payment, auto_pay_start_year, auto_pay_start_month, auto_pay_start_day, auto_pay_pillar_id'
+    )
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .not('monthly_payment', 'is', null)
+
+  const dueAutoPayDebts = (autoPayDebts ?? []).filter((d) => isAutoPayDue(d, today))
+  let pendingAutoPayCount = 0
+  if (dueAutoPayDebts.length > 0) {
+    const debtIds = dueAutoPayDebts.map((d) => d.id)
+    const { data: existingTx } = await supabase
+      .from('transactions')
+      .select('debt_id')
+      .in('debt_id', debtIds)
+      .gte('date', start)
+      .lte('date', end)
+    const yaConfirmados = new Set((existingTx ?? []).map((r) => r.debt_id))
+    pendingAutoPayCount = dueAutoPayDebts.filter((d) => !yaConfirmados.has(d.id)).length
+  }
+
+  const [{ data: profile }, { data: pillars }, { data: transactions }, { data: dominoEvents }] =
     await Promise.all([
       supabase.from('profiles').select('base_income').eq('id', userId).single(),
       supabase.from('pillars').select('id, name, percentage').eq('user_id', userId),
@@ -83,7 +114,6 @@ export default async function DashboardPage() {
         .eq('user_id', userId)
         .gte('date', start)
         .lte('date', end),
-      supabase.from('debts').select('monthly_payment').eq('user_id', userId).eq('status', 'active'),
       supabase
         .from('domino_events')
         .select('source_category_id, affected_category_id, debt_id, amount')
@@ -111,7 +141,6 @@ export default async function DashboardPage() {
     pillars: pillars ?? [],
     transactionsThisMonth: transactions ?? [],
     fixedCategories,
-    activeDebts: debts ?? [],
     dominoPillarAdjustments,
   })
 
@@ -154,6 +183,16 @@ export default async function DashboardPage() {
           </div>
         ))}
       </section>
+
+      {pendingAutoPayCount > 0 && (
+        <Link
+          href="/deudas"
+          className="rounded-lg bg-amber-50 px-3 py-2 text-center text-sm text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-400 dark:hover:bg-amber-950/60"
+        >
+          Tenés {pendingAutoPayCount} pago{pendingAutoPayCount > 1 ? 's' : ''} de deuda pendiente
+          {pendingAutoPayCount > 1 ? 's' : ''} de confirmar. Ver Deudas →
+        </Link>
+      )}
 
       {/* Acceso rápido a registrar gasto/ingreso extra. */}
       <QuickAddForm pillars={pillars ?? []} categories={activeCategories} />

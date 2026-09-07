@@ -140,18 +140,18 @@ No hay tour completo de la app.
 - Los saldos no utilizados de **todos los pilares** (Ahorro, Gasto e Inversión) se acumulan al mes siguiente.
 - ⚠️ *Nota de riesgo:* que Gasto acumule puede hacer crecer indefinidamente el presupuesto de gastos si el usuario es muy frugal. A monitorear con usuarios reales en Fase 1.
 
-### 3.4 Modelo de ingreso distribuible
-
-La distribución a los pilares siempre se calcula sobre el **ingreso distribuible**, no el ingreso total:
+### 3.4 Distribución del ingreso
 
 ```
 Ingreso total
-  − Suma de todas las cuotas de deuda activas del mes
-= Ingreso distribuible
   → Ahorro X%
   → Gasto Y%
   → Inversión Z%
 ```
+
+Los pagos de deuda (sección 6) no se descuentan de este cálculo: son un
+gasto normal contra el pilar/categoría que el usuario elige al registrar el
+pago, igual que cualquier otro movimiento.
 
 ---
 
@@ -226,82 +226,6 @@ Esto es automático y no requiere intervención del usuario.
 
 ---
 
-## 5. Deudas
-
-### 5.1 Estructura de una deuda
-
-Por cada deuda el usuario registra:
-
-| Campo | Detalle |
-|---|---|
-| Nombre | Ej. "Tarjeta Banco X", "Préstamo amigo" |
-| Monto total pendiente | Número |
-| Plazo | En meses |
-| Tasa de interés mensual | Opcional. Si no se ingresa, el sistema asume 0% |
-
-### 5.2 Cálculo de la cuota mensual
-
-- **Sin interés:** cuota = monto ÷ meses.
-- **Con interés:** se aplica fórmula de amortización estándar. El usuario ve cuánto es capital y cuánto es interés en cada cuota.
-
-### 5.3 Impacto en el presupuesto
-
-- La suma de todas las cuotas mensuales activas se descuenta del ingreso total **antes** de distribuir entre los 3 pilares (ver sección 3.4).
-- Los % de los pilares siempre aplican sobre el ingreso distribuible.
-- Si el usuario tiene múltiples deudas, todas se descuentan antes de distribuir.
-
-### 5.4 Cuando el presupuesto no alcanza para la cuota
-
-- Se registra como **déficit visible**, igual que el efecto dominó.
-- El sistema muestra cuánto falta y qué pilares quedaron afectados.
-- No se bloquea al usuario.
-
-### 5.5 Cuando una deuda se termina de pagar
-
-- Se marca como **saldada automáticamente** al completar la última cuota.
-- El ingreso distribuible aumenta automáticamente el mes siguiente.
-- El sistema muestra una notificación positiva: *"¡Terminaste de pagar [nombre deuda]! Tenés $X más disponibles este mes."*
-
-### 5.6 Múltiples deudas simultáneas
-
-- El usuario puede tener tantas deudas activas como quiera.
-- Cada una se gestiona de forma independiente con su propio progreso, cuota y plazo.
-
----
-
-## 6. Estadísticas
-
-### 6.1 Estructura
-
-- Una sola sección de Estadísticas con **selector de mes navegable**.
-- El dashboard principal cubre la vista del día actual en tiempo real — no se duplica en Estadísticas.
-- Sin estadísticas semanales en el MVP.
-
-### 6.2 Vista mensual — contenido
-
-| Dato | Descripción |
-|---|---|
-| Ingreso total del mes | Base + extras registrados |
-| Total cuotas de deuda descontadas | Suma de cuotas activas ese mes |
-| Ingreso distribuible real | Ingreso total − cuotas de deuda |
-| Por pilar | Presupuesto asignado vs. gasto real, superávit o déficit |
-| Por subcategoría | Mismo desglose que por pilar |
-| Efecto dominó | Número de veces activado ese mes y categorías más afectadas |
-| Progreso de deudas | Cuotas pagadas, cuotas restantes, monto pendiente por deuda |
-| Saldo acumulado | Lo que pasó al mes siguiente por pilar |
-
-### 6.3 Historial
-
-- El usuario puede navegar mes a mes hacia atrás desde el mes actual hasta el primer mes con actividad registrada.
-- Cada mes pasado muestra los mismos datos que la vista mensual actual, pero **cerrado y de solo lectura**.
-
-### 6.4 Primer mes del usuario
-
-- Si el usuario creó la cuenta a mitad de mes, el primer mes muestra datos solo desde la fecha de registro hasta fin de mes.
-- No hay datos ficticios ni proyecciones — solo lo real registrado.
-
----
-
 ## 5. Presupuesto Diario Disponible
 
 ### 5.1 Qué es
@@ -347,42 +271,64 @@ En el dashboard principal, como el número más prominente de la pantalla. El us
 
 ### 6.1 Estructura de una deuda
 
-Por cada deuda el usuario registra:
+Una deuda es solo un registro: nombre + monto total. **Crear una deuda no
+afecta el presupuesto de ningún pilar.** Lo único que reduce el presupuesto
+es un PAGO registrado contra la deuda, en el momento en que se registra —
+nunca automáticamente por el solo hecho de que la deuda exista.
 
 | Campo | Detalle |
 |---|---|
 | Nombre | Ej. "Tarjeta Banco X", "Préstamo amigo" |
-| Monto total pendiente | Número en Bs |
-| Plazo | En meses |
-| Tasa de interés mensual | Opcional. Si no se ingresa, el sistema asume 0% |
+| Monto total | Número en Bs |
 
-### 6.2 Cálculo de la cuota mensual
+### 6.2 Registrar un pago
 
-- **Sin interés:** cuota = monto ÷ meses.
-- **Con interés:** se aplica fórmula de amortización estándar. El usuario ve cuánto es capital y cuánto es interés en cada cuota.
+Dos formas de registrar un pago contra una deuda (no son excluyentes), y en
+ambas el usuario elige **un pilar específico + una categoría opcional**
+(nunca una categoría de gasto fijo) de dónde sale la plata — por defecto
+Gasto, sin categoría:
+
+- **Manual, en cualquier momento:** el usuario toca "Registrar pago", ingresa
+  un monto y elige el pilar/categoría. Es un gasto normal contra ese
+  pilar/categoría.
+- **Plan automático (opcional, se configura una sola vez):** cuota fija
+  mensual + mes/año/día de inicio (el día es opcional) + el mismo
+  pilar/categoría. Es un **recordatorio, no un descuento silencioso**: al
+  llegar la fecha, aparece un aviso ("Te toca pagar X Bs de [deuda]") con un
+  botón "Ya la pagué". El pago recién se registra cuando el usuario toca ese
+  botón — nunca se asume que ya se pagó solo porque llegó la fecha.
+
+En ambos casos, un pago no puede ser mayor al saldo pendiente de la deuda. El
+sistema muestra un error y no lo acepta (misma regla que con los Deudores,
+§7.2).
 
 ### 6.3 Impacto en el presupuesto
 
-- La suma de todas las cuotas mensuales activas se descuenta del ingreso total **antes** de distribuir entre los 3 pilares (ver sección 3.4).
-- Los % de los pilares siempre aplican sobre el ingreso distribuible.
-- Si el usuario tiene múltiples deudas, todas se descuentan antes de distribuir.
+Un pago de deuda es un gasto normal: baja el saldo del pilar/categoría
+elegido, igual que cualquier otro movimiento. No existe ningún descuento
+"antes de repartir entre pilares" — ver sección 3.4.
 
-### 6.4 Cuando el presupuesto no alcanza para la cuota
+### 6.4 Cuando el pago no cabe en el presupuesto
 
-- Se registra como **déficit visible**, igual que el efecto dominó.
-- El sistema muestra cuánto falta y qué pilares quedaron afectados.
-- No se bloquea al usuario.
+- Si un pago deja esa categoría/pilar en negativo, se ve reflejado en el
+  saldo del pilar como cualquier otro exceso — no hace falta declarar de
+  dónde salió esa plata (ya se declaró al elegir el pilar/categoría del
+  pago).
 
 ### 6.5 Cuando una deuda se termina de pagar
 
-- Se marca como **saldada automáticamente** al completar la última cuota.
-- El ingreso distribuible aumenta automáticamente el mes siguiente.
-- El sistema muestra una notificación positiva: *"¡Terminaste de pagar [nombre deuda]! Tenés X Bs más disponibles este mes."*
+- Al llegar el monto pendiente a 0, la deuda se marca como **saldada
+  automáticamente**.
+- El sistema muestra una notificación positiva: *"¡Terminaste de pagar
+  [nombre deuda]!"*
+- El usuario también puede marcar una deuda como pagada manualmente ("dar
+  por pagada"), sin que eso registre ningún pago.
 
 ### 6.6 Múltiples deudas simultáneas
 
 - El usuario puede tener tantas deudas activas como quiera.
-- Cada una se gestiona de forma independiente con su propio progreso, cuota y plazo.
+- Cada una se gestiona de forma independiente, con su propio progreso y (si
+  tiene) su propio plan de pago automático.
 
 ---
 
@@ -439,12 +385,10 @@ Módulo independiente del de Deudas. La lógica es inversa: acá el usuario regi
 | Dato | Descripción |
 |---|---|
 | Ingreso total del mes | Base + extras registrados |
-| Total cuotas de deuda descontadas | Suma de cuotas activas ese mes |
-| Ingreso distribuible real | Ingreso total − cuotas de deuda |
 | Por pilar | Presupuesto asignado vs. gasto real, superávit o déficit |
 | Por subcategoría | Mismo desglose que por pilar |
 | Efecto dominó | Número de veces activado ese mes y categorías más afectadas |
-| Progreso de deudas | Cuotas pagadas, cuotas restantes, monto pendiente por deuda |
+| Progreso de deudas | Monto pendiente y pagos registrados por deuda |
 | Deudores activos ese mes | Cobros recibidos y pendientes |
 | Saldo acumulado | Lo que pasó al mes siguiente por pilar |
 
@@ -529,22 +473,27 @@ amount       → número (positivo = ingreso, negativo = gasto)
 type         → "expense" | "extra_income"
 description  → texto libre opcional
 date         → fecha del registro
+debt_id      → referencia a debts, opcional (pago de deuda con fuente pilar/categoría específica)
 created_at   → timestamp
 ```
 
-**`debts`** — deudas del usuario (lo que él debe)
+**`debts`** — deudas del usuario (lo que él debe). Modelo v2 (sección 6):
+crear una deuda no descuenta nada; solo un pago registrado resta.
 ```
-id               → UUID
-user_id          → referencia a auth.users
-name             → texto
-total_amount     → número
-remaining_amount → número
-monthly_payment  → número
-interest_rate    → número (0 si sin interés)
-total_months     → número
-paid_months      → número
-status           → "active" | "paid"
-created_at       → timestamp
+id                     → UUID
+user_id                → referencia a auth.users
+name                   → texto
+total_amount           → número
+remaining_amount       → número
+monthly_payment        → número o null. Cuota del plan de pago automático OPCIONAL (null = sin plan)
+auto_pay_start_year    → número o null. Año desde el que arranca el plan automático
+auto_pay_start_month   → número (1-12) o null
+auto_pay_start_day     → número (1-31) o null. Día del recordatorio; null = desde el 1° del mes
+auto_pay_pillar_id     → referencia a pillars (requerido si hay plan automático)
+auto_pay_category_id   → referencia a categories, opcional (dentro de auto_pay_pillar_id)
+status                 → "active" | "paid"
+created_at             → timestamp
+-- interest_rate, total_months, paid_months: obsoletos desde el modelo v2, se dejan sin borrar.
 ```
 
 **`debtors`** — personas que le deben al usuario
@@ -608,11 +557,12 @@ auth.users (Supabase)
 | El usuario borra una subcategoría con gastos registrados | Los gastos históricos se conservan etiquetados como "categoría eliminada". No se borran. |
 | El usuario cambia el % de un pilar a mitad de mes con gastos ya registrados | Los gastos pasados no cambian. Solo se recalcula el saldo disponible del resto del mes. |
 | El ingreso base es $0 | El sistema no deja avanzar en el onboarding sin un ingreso mayor a $0. |
-| El usuario tiene más cuotas de deuda que ingreso disponible | Se muestra déficit total visible. El sistema no bloquea pero avisa con alerta fuerte. |
+| Un pago de deuda deja el pilar/categoría elegido en negativo | Se ve reflejado como déficit del pilar, igual que cualquier otro exceso. No se bloquea. |
+| El usuario intenta registrar un pago de deuda mayor al saldo pendiente | El sistema no acepta un pago mayor al saldo pendiente. Muestra error (misma regla que con Deudores). |
 | Primer mes incompleto (se registró a mitad de mes) | El presupuesto se calcula proporcional a los días restantes del mes, no el mes completo. |
 | El usuario no registra ningún gasto en todo el mes | El mes cierra con superávit total. Todo se acumula al siguiente mes según las reglas de cada pilar. |
 | Dos ingresos extra el mismo día | Se registran como transacciones independientes, cada una con su destino manual elegido. |
-| Una deuda se termina de pagar | Se marca como saldada, el ingreso distribuible aumenta el mes siguiente, notificación positiva al usuario. |
+| Una deuda se termina de pagar | Se marca como saldada sola al llegar a 0, notificación positiva al usuario. Si tenía un plan automático, deja de generarse el próximo mes. |
 | El usuario quiere editar un mes ya cerrado | No se puede. El historial es de solo lectura. |
 | Un deudor paga más de lo que debe | El sistema no acepta un pago mayor al saldo pendiente. Muestra error. |
 | El usuario borra un deudor con pagos parciales registrados | Se conserva el historial de pagos recibidos como ingresos extra. El registro del deudor se archiva, no se borra. |

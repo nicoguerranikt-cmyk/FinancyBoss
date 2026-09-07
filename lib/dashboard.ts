@@ -8,7 +8,6 @@ export type PillarRow = { id: string; name: PillarName; percentage: number }
 // date es opcional: computeDashboard no la usa, pero actions.ts la necesita
 // para separar "transacciones de antes de hoy" de "hasta hoy" (Caso 1).
 export type TransactionRow = { pillar_id: string; category_id: string | null; amount: number; date?: string }
-export type DebtRow = { monthly_payment: number }
 // Solo categorías CON fixed_amount asignado (gasto fijo, manual §4.2).
 export type CategoryFixedRow = { id: string; pillar_id: string; fixed_amount: number }
 
@@ -55,7 +54,6 @@ export function monthRangeUtcInstant(): { startUtc: string; endUtc: string } {
 
 export type PillarSummary = { id: string; pillar: PillarName; budget: number; saldo: number }
 export type DashboardData = {
-  ingresoDistribuible: number
   pillars: PillarSummary[]
   dailyBudget: number
   isDeficit: boolean
@@ -67,7 +65,6 @@ export function computeDashboard(input: {
   pillars: PillarRow[]
   transactionsThisMonth: TransactionRow[]
   fixedCategories: CategoryFixedRow[]
-  activeDebts: DebtRow[]
   // Efecto dominó (manual §4.3): ajuste CON SIGNO por pilar, ya neto de todo
   // lo declarado este mes. Positivo = un pilar (Ahorro/Inversión) quedó
   // debitado por haber cubierto un déficit de Gasto. Negativo = a Gasto se
@@ -80,13 +77,13 @@ export function computeDashboard(input: {
   const today = input.today ?? todayInBolivia()
   const daysRemaining = daysInMonth(today.year, today.month) - today.day + 1
 
-  const cuotasDeuda = input.activeDebts.reduce((sum, d) => sum + d.monthly_payment, 0)
-  const ingresoDistribuible = input.baseIncome - cuotasDeuda
-
   const fixedCategoryIds = new Set(input.fixedCategories.map((c) => c.id))
 
   const pillarSummaries: PillarSummary[] = input.pillars.map((pillar) => {
-    const budget = (ingresoDistribuible * pillar.percentage) / 100
+    // Deudas v2 (manual §6): todo pago de deuda sale de un pilar/categoría
+    // específico (transactions.debt_id), ya cubierto por `movimientos` más
+    // abajo — no hay más una deducción "de ingreso total antes de repartir".
+    const budget = (input.baseIncome * pillar.percentage) / 100
 
     // Gastos fijos: plata comprometida por CONFIGURACIÓN (manual §4.2/§5.2,
     // "Crítico"), no por si ya existe la transacción del pago. Se resta acá
@@ -116,7 +113,6 @@ export function computeDashboard(input: {
   const dailyBudget = daysRemaining > 0 ? Math.max(0, saldoGasto / daysRemaining) : 0
 
   return {
-    ingresoDistribuible,
     pillars: pillarSummaries,
     dailyBudget,
     isDeficit: saldoGasto <= 0,

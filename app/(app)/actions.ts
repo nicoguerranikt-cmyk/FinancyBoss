@@ -139,11 +139,10 @@ async function checkDominoAfterTransaction(
   const { startUtc, endUtc } = monthRangeUtcInstant()
   const todayIso = todayInBolivia().iso
 
-  const [{ data: profile }, { data: pillars }, { data: debts }, { data: categories }, { data: transactions }, { data: dominoEvents }] =
+  const [{ data: profile }, { data: pillars }, { data: categories }, { data: transactions }, { data: dominoEvents }] =
     await Promise.all([
       supabase.from('profiles').select('base_income').eq('id', ctx.userId).single(),
       supabase.from('pillars').select('id, name, percentage').eq('user_id', ctx.userId),
-      supabase.from('debts').select('monthly_payment').eq('user_id', ctx.userId).eq('status', 'active'),
       // Sin filtro de deleted_at: una categoría que fue afectada por un
       // dominó anterior este mes y se borró después igual tiene que poder
       // mapearse a su pilar más abajo (mismo motivo que en page.tsx).
@@ -184,7 +183,6 @@ async function checkDominoAfterTransaction(
     baseIncome: profile.base_income,
     pillars,
     fixedCategories,
-    activeDebts: debts ?? [],
     dominoPillarAdjustments,
   }
   const dashboardAfter = computeDashboard({ ...base, transactionsThisMonth: allTx })
@@ -374,6 +372,8 @@ export async function resolveDeficit(input: ResolveDeficitInput): Promise<{ erro
     return { error: 'Ingresá quién te prestó la plata.' }
   }
 
+  // Deudas v2 (manual §6): crear la deuda no configura ningún plan de pago
+  // automático — el usuario la paga después, a mano, cuando quiera.
   const { data: debt, error: debtError } = await supabase
     .from('debts')
     .insert({
@@ -381,10 +381,8 @@ export async function resolveDeficit(input: ResolveDeficitInput): Promise<{ erro
       name,
       total_amount: input.amount,
       remaining_amount: input.amount,
-      monthly_payment: input.amount,
-      interest_rate: 0,
-      total_months: 1,
-      paid_months: 0,
+      monthly_payment: null,
+      total_months: null,
       status: 'active',
     })
     .select('id')

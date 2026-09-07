@@ -259,6 +259,7 @@ export default function MiDineroClient({
               <input
                 id={`pct-${pillar.name}`}
                 type="number"
+                onWheel={(e) => e.currentTarget.blur()}
                 min={0}
                 max={100}
                 value={pct[pillar.name]}
@@ -338,6 +339,7 @@ export default function MiDineroClient({
                       <div className="flex items-center gap-1">
                         <input
                           type="number"
+                onWheel={(e) => e.currentTarget.blur()}
                           min={0}
                           max={100}
                           placeholder="libre"
@@ -355,6 +357,7 @@ export default function MiDineroClient({
                           <label className="text-sm text-zinc-500">Monto fijo (Bs)</label>
                           <input
                             type="number"
+                onWheel={(e) => e.currentTarget.blur()}
                             min={0}
                             placeholder="—"
                             value={draft.fixedAmount}

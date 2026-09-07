@@ -172,6 +172,7 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
               <input
                 id="income"
                 type="number"
+                onWheel={(e) => e.currentTarget.blur()}
                 inputMode="numeric"
                 min={0}
                 value={income}
@@ -226,6 +227,7 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
                   <input
                     id={`pct-${key}`}
                     type="number"
+                onWheel={(e) => e.currentTarget.blur()}
                     min={0}
                     max={100}
                     value={pct[key]}
