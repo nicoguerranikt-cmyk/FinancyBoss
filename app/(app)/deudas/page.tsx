@@ -26,6 +26,7 @@ export default async function DeudasPage() {
         'id, name, total_amount, remaining_amount, status, monthly_payment, auto_pay_start_year, auto_pay_start_month, auto_pay_start_day, auto_pay_pillar_id, auto_pay_category_id'
       )
       .eq('user_id', userId)
+      .neq('status', 'archived')
       .order('created_at', { ascending: false }),
     supabase.from('pillars').select('id, name, percentage').eq('user_id', userId),
     supabase.from('categories').select('id, pillar_id, name, fixed_amount').eq('user_id', userId).is('deleted_at', null),

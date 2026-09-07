@@ -323,6 +323,8 @@ elegido, igual que cualquier otro movimiento. No existe ningún descuento
   [nombre deuda]!"*
 - El usuario también puede marcar una deuda como pagada manualmente ("dar
   por pagada"), sin que eso registre ningún pago.
+- Una deuda ya pagada se puede **archivar** para sacarla de la vista, sin
+  borrar su historial (igual que con Deudores, sección 7).
 
 ### 6.6 Múltiples deudas simultáneas
 
@@ -369,6 +371,7 @@ Módulo independiente del de Deudas. La lógica es inversa: acá el usuario regi
 |---|---|
 | `pending` | Hay saldo pendiente mayor a 0 |
 | `paid` | El saldo llegó a 0 (automático) |
+| `archived` | El usuario lo archivó a mano (§11) — se conserva el historial de cobros, deja de aparecer en la lista |
 
 ---
 
@@ -458,7 +461,6 @@ name             → texto libre
 percentage       → número relativo al pilar (puede ser null)
 fixed_amount     → número o null. Si tiene valor = GASTO FIJO, no entra en el cálculo diario
 auto_repeat      → boolean. Si el gasto fijo se descuenta solo cada mes
-backup_priority  → número (orden de respaldo en efecto dominó)
 deleted_at       → timestamp nullable (borrado suave)
 created_at       → timestamp
 ```
@@ -474,6 +476,7 @@ type         → "expense" | "extra_income"
 description  → texto libre opcional
 date         → fecha del registro
 debt_id      → referencia a debts, opcional (pago de deuda con fuente pilar/categoría específica)
+debtor_id    → referencia a debtors, opcional (cobro de un deudor registrado como ingreso extra)
 created_at   → timestamp
 ```
 
@@ -491,9 +494,8 @@ auto_pay_start_month   → número (1-12) o null
 auto_pay_start_day     → número (1-31) o null. Día del recordatorio; null = desde el 1° del mes
 auto_pay_pillar_id     → referencia a pillars (requerido si hay plan automático)
 auto_pay_category_id   → referencia a categories, opcional (dentro de auto_pay_pillar_id)
-status                 → "active" | "paid"
+status                 → "active" | "paid" | "archived" (el usuario archiva una deuda ya pagada para sacarla de la vista, sin borrar su historial)
 created_at             → timestamp
--- interest_rate, total_months, paid_months: obsoletos desde el modelo v2, se dejan sin borrar.
 ```
 
 **`debtors`** — personas que le deben al usuario

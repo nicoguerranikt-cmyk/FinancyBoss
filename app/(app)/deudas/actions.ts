@@ -5,48 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { monthRangeInBolivia, todayInBolivia } from '@/lib/dashboard'
 import { applyDebtPayment, isAutoPayDue } from '@/lib/debts'
 import { EPSILON } from '@/lib/domino'
-
-type SupabaseClient = Awaited<ReturnType<typeof createClient>>
-
-// Valida (si vienen) que el pilar/categoría sean del usuario y que la
-// categoría no sea un gasto fijo: si se permitiera, el pago quedaría
-// excluido de "movimientos" en computeDashboard (igual que un gasto fijo) y
-// la plata "desaparecería" del saldo del pilar sin que el usuario lo note.
-async function validateSource(
-  supabase: SupabaseClient,
-  userId: string,
-  pillarId: string,
-  categoryId: string | null | undefined
-): Promise<{ pillarId: string; categoryId: string | null; error?: string }> {
-  const { data: pillar } = await supabase
-    .from('pillars')
-    .select('id')
-    .eq('id', pillarId)
-    .eq('user_id', userId)
-    .maybeSingle()
-  if (!pillar) return { pillarId, categoryId: null, error: 'Pilar inválido.' }
-
-  if (!categoryId) return { pillarId: pillar.id, categoryId: null }
-
-  const { data: category } = await supabase
-    .from('categories')
-    .select('id, fixed_amount')
-    .eq('id', categoryId)
-    .eq('user_id', userId)
-    .eq('pillar_id', pillarId)
-    .is('deleted_at', null)
-    .maybeSingle()
-  if (!category) return { pillarId: pillar.id, categoryId: null, error: 'Categoría inválida.' }
-  if (category.fixed_amount !== null) {
-    return {
-      pillarId: pillar.id,
-      categoryId: null,
-      error: 'Esa categoría es un gasto fijo — elegí otra o dejala sin categoría.',
-    }
-  }
-
-  return { pillarId: pillar.id, categoryId: category.id }
-}
+import { validatePillarSource } from '@/lib/pillarSource'
 
 export type CreateDebtInput = {
   name: string
@@ -94,7 +53,7 @@ export async function createDebt(input: CreateDebtInput): Promise<{ error?: stri
   let pillarId: string | null = null
   let categoryId: string | null = null
   if (input.autoPay) {
-    const result = await validateSource(supabase, user.id, input.autoPay.pillarId, input.autoPay.categoryId)
+    const result = await validatePillarSource(supabase, user.id, input.autoPay.pillarId, input.autoPay.categoryId)
     if (result.error) return { error: result.error }
     pillarId = result.pillarId
     categoryId = result.categoryId
@@ -106,7 +65,6 @@ export async function createDebt(input: CreateDebtInput): Promise<{ error?: stri
     total_amount: input.totalAmount,
     remaining_amount: input.totalAmount,
     monthly_payment: input.autoPay?.monthlyAmount ?? null,
-    total_months: null,
     status: 'active',
     auto_pay_start_year: input.autoPay?.startYear ?? null,
     auto_pay_start_month: input.autoPay?.startMonth ?? null,
@@ -157,7 +115,7 @@ export async function registerPayment(input: RegisterPaymentInput): Promise<{ er
     return { error: 'El pago no puede ser mayor al saldo pendiente.' }
   }
 
-  const source = await validateSource(supabase, user.id, input.pillarId, input.categoryId)
+  const source = await validatePillarSource(supabase, user.id, input.pillarId, input.categoryId)
   if (source.error) return { error: source.error }
 
   const { remainingAmount, status } = applyDebtPayment(debt, input.amount)
@@ -308,6 +266,45 @@ export async function markDebtPaid(input: { debtId: string }): Promise<{ error?:
       input,
     })
     return { error: 'No pudimos marcar la deuda como pagada. Probá de nuevo.' }
+  }
+
+  revalidatePath('/deudas')
+  return {}
+}
+
+// Saca una deuda pagada de la vista sin borrar su historial
+// (transactions.debt_id sigue apuntando a ella) — mismo criterio que
+// archiveDebtor en app/(app)/deudores/actions.ts.
+export async function archiveDebt(input: { debtId: string }): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+
+  const { data: debt } = await supabase
+    .from('debts')
+    .select('id, status')
+    .eq('id', input.debtId)
+    .eq('user_id', user.id)
+    .maybeSingle()
+  if (!debt) return { error: 'Deuda inválida.' }
+  if (debt.status !== 'paid') return { error: 'Solo se puede archivar una deuda ya pagada.' }
+
+  const { error } = await supabase
+    .from('debts')
+    .update({ status: 'archived' })
+    .eq('id', input.debtId)
+    .eq('user_id', user.id)
+  if (error) {
+    console.error('[archiveDebt] update error:', {
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+      input,
+    })
+    return { error: 'No pudimos archivar la deuda. Probá de nuevo.' }
   }
 
   revalidatePath('/deudas')

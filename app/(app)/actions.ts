@@ -382,7 +382,6 @@ export async function resolveDeficit(input: ResolveDeficitInput): Promise<{ erro
       total_amount: input.amount,
       remaining_amount: input.amount,
       monthly_payment: null,
-      total_months: null,
       status: 'active',
     })
     .select('id')

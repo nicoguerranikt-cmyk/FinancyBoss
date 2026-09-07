@@ -6,9 +6,10 @@
 // nunca de gasto fijo). Por defecto Gasto, sin categoría.
 
 import { useState } from 'react'
-import type { PillarName } from '@/lib/dashboard'
 import { formatBs } from '@/lib/format'
+import PillarCategoryFields, { type CategoryRow, type PillarRow } from '../PillarCategoryFields'
 import {
+  archiveDebt,
   confirmAutoPayment,
   createDebt,
   markDebtPaid,
@@ -16,19 +17,11 @@ import {
   type CreateDebtInput,
 } from './actions'
 
-const PILLAR_LABEL: Record<PillarName, string> = {
-  ahorro: 'Ahorro',
-  gasto: 'Gasto',
-  inversion: 'Inversión',
-}
-
 const MONTH_LABEL = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ]
 
-type PillarRow = { id: string; name: PillarName; percentage: number }
-type CategoryRow = { id: string; pillar_id: string; name: string; fixed_amount: number | null }
 type DebtRow = {
   id: string
   name: string
@@ -49,61 +42,6 @@ const secondaryButtonClass =
   'rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:hover:bg-zinc-800'
 const primaryButtonClass =
   'rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'
-
-// Selector de fuente compartido entre "Registrar pago" y "+ Nueva deuda":
-// siempre un pilar + categoría opcional (nunca una categoría de gasto fijo
-// — el servidor la rechaza).
-function SourceFields({
-  pillars,
-  categories,
-  pillarId,
-  setPillarId,
-  categoryId,
-  setCategoryId,
-}: {
-  pillars: PillarRow[]
-  categories: CategoryRow[]
-  pillarId: string
-  setPillarId: (v: string) => void
-  categoryId: string
-  setCategoryId: (v: string) => void
-}) {
-  const categoryOptions = categories.filter((c) => c.pillar_id === pillarId && c.fixed_amount === null)
-
-  return (
-    <div className="flex flex-wrap gap-2">
-      <select
-        value={pillarId}
-        onChange={(e) => {
-          setPillarId(e.target.value)
-          setCategoryId('')
-        }}
-        className={`${inputClass} [color-scheme:light] dark:[color-scheme:dark]`}
-      >
-        <option value="">Elegí un pilar</option>
-        {pillars.map((p) => (
-          <option key={p.id} value={p.id}>
-            {PILLAR_LABEL[p.name]}
-          </option>
-        ))}
-      </select>
-      {pillarId && (
-        <select
-          value={categoryId}
-          onChange={(e) => setCategoryId(e.target.value)}
-          className={`${inputClass} [color-scheme:light] dark:[color-scheme:dark]`}
-        >
-          <option value="">Sin categoría (va directo al pilar)</option>
-          {categoryOptions.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      )}
-    </div>
-  )
-}
 
 export default function DeudasClient({
   debts,
@@ -185,6 +123,17 @@ export default function DeudasClient({
     await markDebtPaid({ debtId })
     setMarkSaving((prev) => ({ ...prev, [debtId]: false }))
     setConfirmingPaidId(null)
+  }
+
+  // ---------- Archivar (deuda ya pagada) ----------
+  const [confirmingArchiveId, setConfirmingArchiveId] = useState<string | null>(null)
+  const [archiveSaving, setArchiveSaving] = useState<Record<string, boolean>>({})
+
+  async function handleArchive(debtId: string) {
+    setArchiveSaving((prev) => ({ ...prev, [debtId]: true }))
+    await archiveDebt({ debtId })
+    setArchiveSaving((prev) => ({ ...prev, [debtId]: false }))
+    setConfirmingArchiveId(null)
   }
 
   // ---------- Nueva deuda ----------
@@ -321,7 +270,7 @@ export default function DeudasClient({
                         onChange={(e) => setPaymentAmount(e.target.value)}
                         className={inputClass}
                       />
-                      <SourceFields
+                      <PillarCategoryFields
                         pillars={pillars}
                         categories={categories}
                         pillarId={paymentPillarId}
@@ -376,6 +325,32 @@ export default function DeudasClient({
                   )}
                 </>
               )}
+
+              {isPaid &&
+                (confirmingArchiveId === debt.id ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+                    <p className="text-sm text-zinc-500">¿Archivar &quot;{debt.name}&quot;?</p>
+                    <button
+                      onClick={() => handleArchive(debt.id)}
+                      disabled={archiveSaving[debt.id]}
+                      className="rounded-lg bg-red-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-800 disabled:opacity-40"
+                    >
+                      Sí, archivar
+                    </button>
+                    <button onClick={() => setConfirmingArchiveId(null)} className={secondaryButtonClass}>
+                      Cancelar
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mt-3">
+                    <button
+                      onClick={() => setConfirmingArchiveId(debt.id)}
+                      className="text-sm font-medium text-red-600 hover:text-red-700"
+                    >
+                      Archivar
+                    </button>
+                  </div>
+                ))}
             </div>
           )
         })}
@@ -455,7 +430,7 @@ export default function DeudasClient({
               <p className="text-xs text-zinc-500">
                 Si dejás el día vacío, el recordatorio aparece desde el 1° del mes de inicio.
               </p>
-              <SourceFields
+              <PillarCategoryFields
                 pillars={pillars}
                 categories={categories}
                 pillarId={autoPayPillarId}
