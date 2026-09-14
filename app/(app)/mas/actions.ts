@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { todayInBolivia } from '@/lib/dashboard'
 
 export type UpdateProfileInput = {
   name: string
@@ -23,9 +24,20 @@ export async function updateProfile(input: UpdateProfileInput): Promise<{ error?
   } = await supabase.auth.getUser()
   if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
 
+  // Guardar acá (desde Más o desde el aviso del Dashboard) cuenta como
+  // "confirmar el ingreso de este mes" (manual §3.1) — mismo criterio que
+  // el resto del proyecto: no hay historial, solo el año/mes vigente.
+  const today = todayInBolivia()
+
   const { error } = await supabase
     .from('profiles')
-    .update({ name, base_income: input.baseIncome, auto_repeat_income: input.autoRepeatIncome })
+    .update({
+      name,
+      base_income: input.baseIncome,
+      auto_repeat_income: input.autoRepeatIncome,
+      income_confirmed_year: today.year,
+      income_confirmed_month: today.month,
+    })
     .eq('id', user.id)
   if (error) {
     console.error('[updateProfile] update error:', {

@@ -17,6 +17,7 @@ import { isAutoPayDue } from '@/lib/debts'
 import { computeDominoPillarAdjustments } from '@/lib/domino'
 import { formatBs } from '@/lib/format'
 import { closeElapsedMonths, getCarriedOverByPillarId } from '@/lib/monthClose'
+import IncomeConfirmBanner from './IncomeConfirmBanner'
 import QuickAddForm from './QuickAddForm'
 
 const PILLAR_LABEL: Record<PillarName, string> = {
@@ -112,7 +113,11 @@ export default async function DashboardPage() {
 
   const [{ data: profile }, { data: pillars }, { data: transactions }, { data: dominoEvents }, carriedOverByPillarId] =
     await Promise.all([
-      supabase.from('profiles').select('base_income').eq('id', userId).single(),
+      supabase
+        .from('profiles')
+        .select('name, base_income, auto_repeat_income, income_confirmed_year, income_confirmed_month')
+        .eq('id', userId)
+        .single(),
       supabase.from('pillars').select('id, name, percentage').eq('user_id', userId),
       supabase
         .from('transactions')
@@ -154,6 +159,13 @@ export default async function DashboardPage() {
 
   const activeCategories = (categories ?? []).filter((c) => !c.deleted_at)
 
+  // manual §3.1: si el ingreso no se repite solo, hay que confirmarlo a
+  // mano al empezar cada mes. No bloquea nada mientras tanto — el cálculo
+  // ya de arriba usa el último base_income guardado como estimación.
+  const needsIncomeConfirmation =
+    !profile?.auto_repeat_income &&
+    (profile?.income_confirmed_year !== today.year || profile?.income_confirmed_month !== today.month)
+
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
       {/* Presupuesto diario disponible: el número más importante de la app. */}
@@ -191,6 +203,13 @@ export default async function DashboardPage() {
           </div>
         ))}
       </section>
+
+      {needsIncomeConfirmation && (
+        <IncomeConfirmBanner
+          name={profile?.name ?? ''}
+          baseIncome={profile?.base_income ?? 0}
+        />
+      )}
 
       {pendingAutoPayCount > 0 && (
         <Link
