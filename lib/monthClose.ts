@@ -137,6 +137,19 @@ async function closeOneMonth(
   }
 }
 
+// Al cruzar a un mes nuevo, una deuda/deudor ya "pagado" pasa solo a
+// "archivado" (mismo estado que ya usa el archivado manual — Deudas §6.5,
+// Deudores §7) para que no siga apareciendo en la lista. Se llama SOLO
+// cuando de verdad se cerró al menos un mes (no en cada carga de página):
+// lo pagado se sigue viendo el resto del mes en que se pagó, y recién
+// desaparece al empezar el siguiente.
+async function archivePaidDebtsAndDebtors(supabase: SupabaseClient, userId: string): Promise<void> {
+  await Promise.all([
+    supabase.from('debts').update({ status: 'archived' }).eq('user_id', userId).eq('status', 'paid'),
+    supabase.from('debtors').update({ status: 'archived' }).eq('user_id', userId).eq('status', 'paid'),
+  ])
+}
+
 // Cierra, en orden cronológico, todos los meses ya terminados que todavía
 // no tengan fila en monthly_budgets.
 export async function closeElapsedMonths(supabase: SupabaseClient, userId: string): Promise<void> {
@@ -158,9 +171,15 @@ export async function closeElapsedMonths(supabase: SupabaseClient, userId: strin
     : dateInBolivia(new Date(profile.created_at))
 
   const today = todayInBolivia()
+  let closedAny = false
 
   while (cursor.year < today.year || (cursor.year === today.year && cursor.month < today.month)) {
     await closeOneMonth(supabase, userId, cursor.year, cursor.month, profile.base_income)
+    closedAny = true
     cursor = nextMonth(cursor.year, cursor.month)
+  }
+
+  if (closedAny) {
+    await archivePaidDebtsAndDebtors(supabase, userId)
   }
 }

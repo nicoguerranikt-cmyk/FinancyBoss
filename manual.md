@@ -325,6 +325,9 @@ elegido, igual que cualquier otro movimiento. No existe ningún descuento
   por pagada"), sin que eso registre ningún pago.
 - Una deuda ya pagada se puede **archivar** para sacarla de la vista, sin
   borrar su historial (igual que con Deudores, sección 7).
+- Al empezar un mes nuevo, cualquier deuda que ya esté pagada se archiva
+  sola (se sigue viendo el resto del mes en que se pagó; recién desaparece
+  al mes siguiente).
 
 ### 6.6 Múltiples deudas simultáneas
 
@@ -371,7 +374,7 @@ Módulo independiente del de Deudas. La lógica es inversa: acá el usuario regi
 |---|---|
 | `pending` | Hay saldo pendiente mayor a 0 |
 | `paid` | El saldo llegó a 0 (automático) |
-| `archived` | El usuario lo archivó a mano (§11) — se conserva el historial de cobros, deja de aparecer en la lista |
+| `archived` | El usuario lo archivó a mano (§11), o pasó solo al empezar el mes siguiente a que quedó `paid` — se conserva el historial de cobros, deja de aparecer en la lista |
 
 ---
 
