@@ -3,8 +3,8 @@
 // Barra de navegación principal (manual.md sección 9): mobile-first, fija
 // abajo, pensada para escalar a app móvil más adelante.
 
-import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import Link from './AppLink'
 
 const TABS = [
   { href: '/', label: 'Dashboard' },

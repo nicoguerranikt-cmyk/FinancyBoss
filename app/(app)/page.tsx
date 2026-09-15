@@ -3,7 +3,8 @@
 // saldos en tiempo real de cada pilar y el acceso rápido para registrar un
 // movimiento.
 
-import Link from 'next/link'
+import Link from './AppLink'
+import PageReadySignal from './PageReadySignal'
 import { createClient } from '@/lib/supabase/server'
 import {
   computeDashboard,
@@ -168,6 +169,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
+      <PageReadySignal />
       {/* Presupuesto diario disponible: el número más importante de la app. */}
       <section className="text-center">
         <p className="text-sm text-zinc-500">Podés gastar hoy</p>

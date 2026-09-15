@@ -3,12 +3,13 @@
 // sin filtro de mes). Click en una categoría entra a su detalle
 // (/mi-dinero/[pillarId]/[categoryId]), donde vive Consulta/Configuración.
 
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { formatBs } from '@/lib/format'
 import type { PillarName } from '@/lib/dashboard'
+import Link from '../../AppLink'
 import AddCategoryForm from './AddCategoryForm'
+import PageReadySignal from '../../PageReadySignal'
 
 const PILLAR_LABEL: Record<PillarName, string> = {
   ahorro: 'Ahorro',
@@ -72,6 +73,7 @@ export default async function PillarCategoriesPage({
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
+      <PageReadySignal />
       <div>
         <Link href="/mi-dinero" className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
           ← Mi Dinero

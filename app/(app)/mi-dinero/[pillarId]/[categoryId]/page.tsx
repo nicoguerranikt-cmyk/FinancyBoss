@@ -9,11 +9,12 @@
 // (domino_events no escribe en transactions, y hoy ese efecto se aplica a
 // nivel de pilar completo, no de categoría — límite conocido, no un bug).
 
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import Link from '../../../AppLink'
 import type { PillarName } from '@/lib/dashboard'
 import CategoryDetailClient from './CategoryDetailClient'
+import PageReadySignal from '../../../PageReadySignal'
 
 const PILLAR_LABEL: Record<PillarName, string> = {
   ahorro: 'Ahorro',
@@ -64,6 +65,7 @@ export default async function CategoryDetailPage({
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
+      <PageReadySignal />
       <div>
         <Link
           href={`/mi-dinero/${pillarId}`}

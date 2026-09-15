@@ -28,6 +28,7 @@ import EstadisticasView, {
   type PillarStat,
   type TrendPoint,
 } from './EstadisticasView'
+import PageReadySignal from '../PageReadySignal'
 
 const PILLAR_LABEL: Record<PillarName, string> = {
   ahorro: 'Ahorro',
@@ -262,6 +263,7 @@ export default async function EstadisticasPage({
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
+      <PageReadySignal />
       <EstadisticasView
         year={year}
         month={month}

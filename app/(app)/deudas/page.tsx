@@ -12,6 +12,7 @@ import SharedDebtsSection, {
   type SharedDebtRow,
 } from '../shared-debts/SharedDebtsSection'
 import DeudasClient from './DeudasClient'
+import PageReadySignal from '../PageReadySignal'
 
 export default async function DeudasPage() {
   const supabase = await createClient()
@@ -97,6 +98,7 @@ export default async function DeudasPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
+      <PageReadySignal />
       <SharedDebtsSection
         role="debtor"
         currentUserId={userId}

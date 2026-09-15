@@ -3,11 +3,12 @@
 // sumar 100). Categorías, saldo acumulado real e historial de movimientos
 // viven un nivel más adentro (click en un pilar), en /mi-dinero/[pillarId].
 
-import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { formatBs } from '@/lib/format'
 import type { PillarName } from '@/lib/dashboard'
+import Link from '../AppLink'
 import MiDineroClient from './MiDineroClient'
+import PageReadySignal from '../PageReadySignal'
 
 const PILLAR_ORDER: PillarName[] = ['ahorro', 'gasto', 'inversion']
 const PILLAR_LABEL: Record<PillarName, string> = {
@@ -46,6 +47,7 @@ export default async function MiDineroPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-8 px-4 py-8">
+      <PageReadySignal />
       <section>
         <h1 className="text-xl font-semibold tracking-tight">Mi Dinero</h1>
         <p className="mt-1 text-sm text-zinc-500">

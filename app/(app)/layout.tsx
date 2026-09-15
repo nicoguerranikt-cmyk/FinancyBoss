@@ -7,7 +7,9 @@
 
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import Header from './Header'
 import NavBar from './NavBar'
+import NavTransitionProvider from './NavTransition'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -30,9 +32,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="flex flex-1 flex-col">
-      <main className="flex flex-1 flex-col pb-16">{children}</main>
-      <NavBar />
-    </div>
+    <NavTransitionProvider>
+      <div className="flex flex-1 flex-col">
+        <Header />
+        <main className="flex flex-1 flex-col pb-16">{children}</main>
+        <NavBar />
+      </div>
+    </NavTransitionProvider>
   )
 }

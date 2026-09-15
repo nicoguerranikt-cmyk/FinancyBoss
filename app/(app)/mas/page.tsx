@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import MasClient from './MasClient'
+import PageReadySignal from '../PageReadySignal'
 
 export default async function MasPage() {
   const supabase = await createClient()
@@ -19,6 +20,7 @@ export default async function MasPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
+      <PageReadySignal />
       <MasClient
         email={user!.email ?? ''}
         name={profile?.name ?? ''}
