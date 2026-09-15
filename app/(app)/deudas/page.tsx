@@ -6,6 +6,11 @@
 import { createClient } from '@/lib/supabase/server'
 import { monthRangeInBolivia, todayInBolivia } from '@/lib/dashboard'
 import { isAutoPayDue } from '@/lib/debts'
+import SharedDebtsSection, {
+  type PendingSharedPayment,
+  type RejectedSharedPayment,
+  type SharedDebtRow,
+} from '../shared-debts/SharedDebtsSection'
 import DeudasClient from './DeudasClient'
 
 export default async function DeudasPage() {
@@ -19,7 +24,7 @@ export default async function DeudasPage() {
   const { start, end } = monthRangeInBolivia()
   const today = todayInBolivia()
 
-  const [{ data: debts }, { data: pillars }, { data: categories }] = await Promise.all([
+  const [{ data: debts }, { data: pillars }, { data: categories }, { data: sharedRows }] = await Promise.all([
     supabase
       .from('debts')
       .select(
@@ -30,7 +35,48 @@ export default async function DeudasPage() {
       .order('created_at', { ascending: false }),
     supabase.from('pillars').select('id, name, percentage').eq('user_id', userId),
     supabase.from('categories').select('id, pillar_id, name, fixed_amount').eq('user_id', userId).is('deleted_at', null),
+    supabase
+      .from('shared_debts')
+      .select('id, name, description, total_amount, remaining_amount, status, created_by, creditor_name')
+      .eq('debtor_user_id', userId)
+      .neq('status', 'archived')
+      .neq('status', 'rejected')
+      .order('created_at', { ascending: false }),
   ])
+
+  // "Deudas vinculadas" (rol deudor): el nombre de la contraparte (acreedor)
+  // se guardó en la fila al crearla — profiles.RLS no deja consultar el
+  // perfil de otro usuario, así que no hay forma de resolverlo después.
+  const sharedDebts: SharedDebtRow[] = (sharedRows ?? []).map((r) => ({
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    total_amount: r.total_amount,
+    remaining_amount: r.remaining_amount,
+    status: r.status,
+    created_by: r.created_by,
+    counterpartName: r.creditor_name ?? 'esa persona',
+  }))
+
+  // Rol deudor: no hay nada que confirmar de este lado (eso es del acreedor,
+  // en Deudores), así que no hace falta traer pagos pendientes acá — pero sí
+  // los que el acreedor rechazó, para avisarle al deudor.
+  const pendingPaymentsByDebtId: Record<string, PendingSharedPayment[]> = {}
+  const rejectedPaymentsByDebtId: Record<string, RejectedSharedPayment[]> = {}
+  // Solo el rechazo más reciente por deuda (si no, se acumulan para
+  // siempre y ensucian la pantalla — con el último alcanza como aviso).
+  const { data: myRejectedPayments } = await supabase
+    .from('shared_debt_payments')
+    .select('id, shared_debt_id, amount, rejection_note')
+    .eq('proposer_user_id', userId)
+    .eq('status', 'rejected')
+    .order('created_at', { ascending: false })
+  for (const p of myRejectedPayments ?? []) {
+    if (rejectedPaymentsByDebtId[p.shared_debt_id]) continue
+    rejectedPaymentsByDebtId[p.shared_debt_id] = [
+      { id: p.id, sharedDebtId: p.shared_debt_id, amount: p.amount, note: p.rejection_note },
+    ]
+  }
 
   // Deudas cuyo plan automático ya venció este mes y todavía no se confirmó.
   const dueDebtIds = (debts ?? [])
@@ -51,6 +97,15 @@ export default async function DeudasPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
+      <SharedDebtsSection
+        role="debtor"
+        currentUserId={userId}
+        debts={sharedDebts}
+        pendingPaymentsByDebtId={pendingPaymentsByDebtId}
+        rejectedPaymentsByDebtId={rejectedPaymentsByDebtId}
+        pillars={pillars ?? []}
+        categories={categories ?? []}
+      />
       <DeudasClient
         debts={debts ?? []}
         pillars={pillars ?? []}
