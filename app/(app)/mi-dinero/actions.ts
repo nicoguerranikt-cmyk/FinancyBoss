@@ -65,6 +65,7 @@ export async function updatePillarPercentages(input: {
   }
 
   revalidatePath('/mi-dinero')
+  revalidatePath('/mi-dinero/[pillarId]', 'page')
   revalidatePath('/') // el Dashboard usa percentage para calcular el budget de cada pilar
   return {}
 }
@@ -119,6 +120,7 @@ export async function createCategory(input: {
   }
 
   revalidatePath('/mi-dinero')
+  revalidatePath('/mi-dinero/[pillarId]', 'page')
   return {}
 }
 
@@ -218,6 +220,8 @@ export async function updateCategory(input: UpdateCategoryInput): Promise<{ erro
   }
 
   revalidatePath('/mi-dinero')
+  revalidatePath('/mi-dinero/[pillarId]', 'page')
+  revalidatePath('/mi-dinero/[pillarId]/[categoryId]', 'page')
   if (input.fixedAmount !== undefined) {
     revalidatePath('/') // fixed_amount se resta del saldo del pilar y del presupuesto diario
   }
@@ -251,6 +255,8 @@ export async function deleteCategory(input: { categoryId: string }): Promise<{ e
   }
 
   revalidatePath('/mi-dinero')
+  revalidatePath('/mi-dinero/[pillarId]', 'page')
+  revalidatePath('/mi-dinero/[pillarId]/[categoryId]', 'page')
   revalidatePath('/') // desaparece del selector de QuickAddForm y, si tenía fixed_amount, cambia el presupuesto
   return {}
 }
