@@ -8,16 +8,19 @@ import PageReadySignal from './PageReadySignal'
 import { createClient } from '@/lib/supabase/server'
 import {
   computeDashboard,
+  daysInMonth,
   monthRangeInBolivia,
   monthRangeUtcInstant,
   todayInBolivia,
-  type CategoryFixedRow,
   type PillarName,
 } from '@/lib/dashboard'
-import { isAutoPayDue } from '@/lib/debts'
+import { lastDueOccurrence } from '@/lib/debts'
 import { computeDominoPillarAdjustments } from '@/lib/domino'
+import { isFixedExpenseScheduled, lastFixedExpenseOccurrence, monthlyReserveAmount } from '@/lib/fixedExpense'
 import { formatBs } from '@/lib/format'
 import { closeElapsedMonths, getCarriedOverByPillarId } from '@/lib/monthClose'
+import { ensureMonthlyAllocation } from '@/lib/monthlyAllocation.server'
+import { PILLAR_COLOR } from '@/lib/pillarColors'
 import IncomeConfirmBanner from './IncomeConfirmBanner'
 import QuickAddForm from './QuickAddForm'
 
@@ -42,33 +45,52 @@ export default async function DashboardPage() {
 
   const { start, end } = monthRangeInBolivia()
   const { startUtc, endUtc } = monthRangeUtcInstant()
+  const today = todayInBolivia()
 
   // Todas las categorías del usuario (sin filtrar deleted_at: una categoría
   // borrada que fue afectada por un dominó igual tiene que poder mapearse a
   // su pilar más abajo). Se usa tanto para generar los gastos fijos
-  // pendientes del mes como para las consultas que siguen.
+  // pendientes como para las consultas que siguen.
   const { data: categories } = await supabase
     .from('categories')
-    .select('id, pillar_id, name, fixed_amount, auto_repeat, deleted_at')
+    .select(
+      'id, pillar_id, name, fixed_amount, auto_repeat, fixed_start_date, fixed_interval_unit, fixed_interval_count, fixed_reserve_ahead, is_general, deleted_at'
+    )
     .eq('user_id', userId)
 
-  // Gastos fijos con auto_repeat: si todavía no tienen una transacción este
-  // mes, se generan acá mismo (no hay infraestructura de cron en el
-  // proyecto). Perezoso e idempotente: se revisa en cada carga del Dashboard.
+  // Gastos fijos con auto_repeat: si la fecha configurada ya llegó y
+  // todavía no hay una transacción para esa cuota, se genera acá mismo (no
+  // hay infraestructura de cron en el proyecto). Perezoso e idempotente: se
+  // revisa en cada carga del Dashboard. Se fecha en la fecha real del
+  // vencimiento (no "hoy"), para que quede prolijo aunque el usuario no
+  // haya abierto la app justo ese día.
   const autoFixed = (categories ?? []).filter(
-    (c) => !c.deleted_at && c.auto_repeat && c.fixed_amount !== null
+    (c) => !c.deleted_at && c.auto_repeat && isFixedExpenseScheduled(c)
   )
-  if (autoFixed.length > 0) {
-    const categoryIds = autoFixed.map((c) => c.id)
+  const dueOccurrenceByCategoryId: Record<string, string> = {}
+  for (const c of autoFixed) {
+    const due = lastFixedExpenseOccurrence(c, today)
+    if (due) dueOccurrenceByCategoryId[c.id] = due
+  }
+  const dueCategoryIds = Object.keys(dueOccurrenceByCategoryId)
+  if (dueCategoryIds.length > 0) {
     const { data: existing } = await supabase
       .from('transactions')
-      .select('category_id')
+      .select('category_id, date')
       .eq('user_id', userId)
-      .in('category_id', categoryIds)
-      .gte('date', start)
-      .lte('date', end)
-    const yaGenerados = new Set((existing ?? []).map((e) => e.category_id))
-    const faltantes = autoFixed.filter((c) => !yaGenerados.has(c.id))
+      .in('category_id', dueCategoryIds)
+    const lastGeneratedByCategoryId: Record<string, string> = {}
+    for (const tx of existing ?? []) {
+      if (!tx.category_id) continue
+      if (!lastGeneratedByCategoryId[tx.category_id] || tx.date > lastGeneratedByCategoryId[tx.category_id]) {
+        lastGeneratedByCategoryId[tx.category_id] = tx.date
+      }
+    }
+    const faltantes = autoFixed.filter((c) => {
+      const due = dueOccurrenceByCategoryId[c.id]
+      const last = lastGeneratedByCategoryId[c.id]
+      return !last || last < due
+    })
     if (faltantes.length > 0) {
       await supabase.from('transactions').insert(
         faltantes.map((c) => ({
@@ -78,62 +100,88 @@ export default async function DashboardPage() {
           amount: -(c.fixed_amount as number),
           type: 'expense' as const,
           description: null,
-          date: start, // 1° del mes
+          date: dueOccurrenceByCategoryId[c.id],
         }))
       )
     }
   }
 
+  // Reparto mensual real por categoría (manual.md — ver migración 0015):
+  // perezoso e idempotente, mismo criterio que los gastos fijos de arriba.
+  // Solo genera algo si el ingreso de este mes ya está confirmado
+  // (auto_repeat_income, o el usuario ya lo confirmó manualmente) y todavía
+  // no se generó — ver lib/monthlyAllocation.server.ts.
+  await ensureMonthlyAllocation(supabase, userId)
+
   // Deudas con plan de pago automático (manual §6.2): es un recordatorio,
   // NUNCA se descuenta solo por haber llegado la fecha — el usuario confirma
   // desde /deudas con el botón "Ya la pagué". Acá solo contamos cuántas
   // están pendientes de confirmar, para el aviso de abajo.
-  const today = todayInBolivia()
   const { data: autoPayDebts } = await supabase
     .from('debts')
     .select(
-      'id, monthly_payment, auto_pay_start_year, auto_pay_start_month, auto_pay_start_day, auto_pay_pillar_id'
+      'id, auto_pay_amount, auto_pay_start_date, auto_pay_interval_unit, auto_pay_interval_count, auto_pay_pillar_id'
     )
     .eq('user_id', userId)
     .eq('status', 'active')
-    .not('monthly_payment', 'is', null)
+    .not('auto_pay_amount', 'is', null)
 
-  const dueAutoPayDebts = (autoPayDebts ?? []).filter((d) => isAutoPayDue(d, today))
+  const dueOccurrenceByDebtId: Record<string, string> = {}
+  for (const d of autoPayDebts ?? []) {
+    if (!d.auto_pay_pillar_id) continue
+    const due = lastDueOccurrence(d, today)
+    if (due) dueOccurrenceByDebtId[d.id] = due
+  }
+  const dueDebtIds = Object.keys(dueOccurrenceByDebtId)
+
   let pendingAutoPayCount = 0
-  if (dueAutoPayDebts.length > 0) {
-    const debtIds = dueAutoPayDebts.map((d) => d.id)
+  if (dueDebtIds.length > 0) {
     const { data: existingTx } = await supabase
       .from('transactions')
-      .select('debt_id')
-      .in('debt_id', debtIds)
-      .gte('date', start)
-      .lte('date', end)
-    const yaConfirmados = new Set((existingTx ?? []).map((r) => r.debt_id))
-    pendingAutoPayCount = dueAutoPayDebts.filter((d) => !yaConfirmados.has(d.id)).length
+      .select('debt_id, date')
+      .in('debt_id', dueDebtIds)
+    const lastConfirmedByDebtId: Record<string, string> = {}
+    for (const tx of existingTx ?? []) {
+      if (!tx.debt_id) continue
+      if (!lastConfirmedByDebtId[tx.debt_id] || tx.date > lastConfirmedByDebtId[tx.debt_id]) {
+        lastConfirmedByDebtId[tx.debt_id] = tx.date
+      }
+    }
+    pendingAutoPayCount = dueDebtIds.filter(
+      (id) => !lastConfirmedByDebtId[id] || lastConfirmedByDebtId[id] < dueOccurrenceByDebtId[id]
+    ).length
   }
 
-  const [{ data: profile }, { data: pillars }, { data: transactions }, { data: dominoEvents }, carriedOverByPillarId] =
-    await Promise.all([
-      supabase
-        .from('profiles')
-        .select('name, base_income, auto_repeat_income, income_confirmed_year, income_confirmed_month')
-        .eq('id', userId)
-        .single(),
-      supabase.from('pillars').select('id, name, percentage').eq('user_id', userId),
-      supabase
-        .from('transactions')
-        .select('pillar_id, category_id, amount')
-        .eq('user_id', userId)
-        .gte('date', start)
-        .lte('date', end),
-      supabase
-        .from('domino_events')
-        .select('source_category_id, affected_category_id, debt_id, amount')
-        .eq('user_id', userId)
-        .gte('created_at', startUtc)
-        .lt('created_at', endUtc),
-      getCarriedOverByPillarId(supabase, userId, today.year, today.month),
-    ])
+  const [
+    { data: profile },
+    { data: pillars },
+    { data: transactions },
+    { data: dominoEvents },
+    carriedOverByPillarId,
+    { data: freeMoneyRows },
+  ] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('name, base_income, auto_repeat_income, income_confirmed_year, income_confirmed_month')
+      .eq('id', userId)
+      .single(),
+    supabase.from('pillars').select('id, name, monthly_amount').eq('user_id', userId),
+    supabase
+      .from('transactions')
+      .select('pillar_id, category_id, amount, is_allocation')
+      .eq('user_id', userId)
+      .gte('date', start)
+      .lte('date', end),
+    supabase
+      .from('domino_events')
+      .select('source_category_id, affected_category_id, debt_id, amount')
+      .eq('user_id', userId)
+      .gte('created_at', startUtc)
+      .lt('created_at', endUtc),
+    getCarriedOverByPillarId(supabase, userId, today.year, today.month),
+    supabase.from('free_money_transactions').select('amount').eq('user_id', userId),
+  ])
+  const freeMoneyAccumulated = (freeMoneyRows ?? []).reduce((sum, r) => sum + r.amount, 0)
 
   const ahorroPillarId = pillars?.find((p) => p.name === 'ahorro')?.id ?? ''
   const gastoPillarId = pillars?.find((p) => p.name === 'gasto')?.id ?? ''
@@ -145,15 +193,28 @@ export default async function DashboardPage() {
     gastoPillarId
   )
 
-  const fixedCategories: CategoryFixedRow[] = (categories ?? [])
-    .filter((c) => !c.deleted_at && c.fixed_amount !== null)
-    .map((c) => ({ id: c.id, pillar_id: c.pillar_id, fixed_amount: c.fixed_amount as number }))
+  // Gastos fijos con "reservar desde ya" (fixed_reserve_ahead, migración
+  // 0018): se restan del presupuesto diario aunque su transacción todavía
+  // no exista, prorrateados según su frecuencia — mismo criterio "Crítico"
+  // del manual.md §5.2, ahora opcional por categoría. Los que no la
+  // activaron no pasan por acá: su transacción, ya generada arriba, es un
+  // movimiento normal más.
+  const daysThisMonth = daysInMonth(today.year, today.month)
+  const fixedReserveByPillarId: Record<string, number> = {}
+  const reservedCategoryIds: string[] = []
+  for (const c of autoFixed) {
+    if (!c.fixed_reserve_ahead) continue
+    reservedCategoryIds.push(c.id)
+    const reserve = monthlyReserveAmount(c, today, daysThisMonth)
+    fixedReserveByPillarId[c.pillar_id] = (fixedReserveByPillarId[c.pillar_id] ?? 0) + reserve
+  }
 
   const dashboard = computeDashboard({
     baseIncome: profile?.base_income ?? 0,
     pillars: pillars ?? [],
     transactionsThisMonth: transactions ?? [],
-    fixedCategories,
+    fixedReserveByPillarId,
+    reservedCategoryIds,
     dominoPillarAdjustments,
     carriedOverByPillarId,
   })
@@ -180,10 +241,12 @@ export default async function DashboardPage() {
         >
           {formatBs(dashboard.dailyBudget)} Bs
         </p>
-        {dashboard.isDeficit && (
+        {dashboard.isDeficit ? (
           <p className="mt-2 text-sm text-red-600">
             Te excediste del presupuesto de Gasto este mes.
           </p>
+        ) : (
+          <div className="mx-auto mt-3 h-1 w-14 rounded-full bg-gradient-to-r from-brand to-brand-violet" />
         )}
       </section>
 
@@ -194,7 +257,10 @@ export default async function DashboardPage() {
             key={p.pillar}
             className="rounded-xl border border-zinc-200 p-3 text-center dark:border-zinc-800"
           >
-            <p className="text-xs text-zinc-500">{PILLAR_LABEL[p.pillar]}</p>
+            <p className="flex items-center justify-center gap-1.5 text-xs text-zinc-500">
+              <span className={`h-2 w-2 rounded-full ${PILLAR_COLOR[p.pillar]}`} />
+              {PILLAR_LABEL[p.pillar]}
+            </p>
             <p
               className={`mt-1 text-lg font-semibold tabular-nums ${
                 p.saldo < 0 ? 'text-red-600' : ''
@@ -206,11 +272,18 @@ export default async function DashboardPage() {
         ))}
       </section>
 
+      {/* Dinero libre (migración 0021): plata sin destino fijo, ver detalle
+          e historial en /mi-dinero/libre. */}
+      <Link
+        href="/mi-dinero/libre"
+        className="flex items-center justify-between rounded-xl border-l-4 border-brand-violet bg-brand-violet/10 p-3 transition-colors hover:brightness-95 dark:hover:brightness-110"
+      >
+        <p className="text-sm font-medium">Dinero libre</p>
+        <p className="text-sm font-semibold text-brand-violet">{formatBs(freeMoneyAccumulated)} Bs →</p>
+      </Link>
+
       {needsIncomeConfirmation && (
-        <IncomeConfirmBanner
-          name={profile?.name ?? ''}
-          baseIncome={profile?.base_income ?? 0}
-        />
+        <IncomeConfirmBanner name={profile?.name ?? ''} baseIncome={profile?.base_income ?? 0} />
       )}
 
       {pendingAutoPayCount > 0 && (

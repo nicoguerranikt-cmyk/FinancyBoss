@@ -12,7 +12,7 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import Link from '../../../AppLink'
-import type { PillarName } from '@/lib/dashboard'
+import { todayInBolivia, type PillarName } from '@/lib/dashboard'
 import CategoryDetailClient from './CategoryDetailClient'
 import PageReadySignal from '../../../PageReadySignal'
 
@@ -45,7 +45,9 @@ export default async function CategoryDetailPage({
 
   const { data: category } = await supabase
     .from('categories')
-    .select('id, pillar_id, name, percentage, fixed_amount, auto_repeat')
+    .select(
+      'id, pillar_id, name, fixed_amount, auto_repeat, fixed_start_date, fixed_interval_unit, fixed_interval_count, fixed_reserve_ahead, is_general, goal_amount, goal_target_date'
+    )
     .eq('id', categoryId)
     .eq('pillar_id', pillarId)
     .eq('user_id', userId)
@@ -53,9 +55,31 @@ export default async function CategoryDetailPage({
     .maybeSingle()
   if (!category) notFound()
 
+  // Retorno de inversión: el destino "a una categoría de Ahorro" necesita la
+  // lista de categorías de Ahorro del usuario — solo se pide cuando hace
+  // falta (pillar Inversión).
+  let ahorroCategories: { id: string; name: string }[] = []
+  if (pillar.name === 'inversion') {
+    const { data: ahorroPillar } = await supabase
+      .from('pillars')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('name', 'ahorro')
+      .maybeSingle()
+    if (ahorroPillar) {
+      const { data: ahorroCats } = await supabase
+        .from('categories')
+        .select('id, name')
+        .eq('pillar_id', ahorroPillar.id)
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+      ahorroCategories = ahorroCats ?? []
+    }
+  }
+
   const { data: history } = await supabase
     .from('transactions')
-    .select('id, amount, type, description, date')
+    .select('id, amount, type, description, date, is_allocation')
     .eq('category_id', categoryId)
     .eq('user_id', userId)
     .order('date', { ascending: false })
@@ -63,25 +87,32 @@ export default async function CategoryDetailPage({
 
   const accumulated = (history ?? []).reduce((sum, t) => sum + t.amount, 0)
 
+  // Gasto ya no tiene una lista única (ver [pillarId]/page.tsx: ahí es un
+  // selector) — "volver" tiene que llevar a la pantalla de la que
+  // probablemente vino, según si esta categoría es fija o cotidiana.
+  const backHref =
+    pillar.name === 'gasto'
+      ? `/mi-dinero/${pillarId}/${category.fixed_amount !== null ? 'fijos' : 'cotidianos'}`
+      : `/mi-dinero/${pillarId}`
+
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
       <PageReadySignal />
       <div>
-        <Link
-          href={`/mi-dinero/${pillarId}`}
-          className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-        >
+        <Link href={backHref} className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
           ← {PILLAR_LABEL[pillar.name]}
         </Link>
         <h1 className="mt-1 text-xl font-semibold tracking-tight">{category.name}</h1>
       </div>
 
       <CategoryDetailClient
-        pillarId={pillarId}
         pillarName={pillar.name}
         category={category}
         accumulated={accumulated}
         history={history ?? []}
+        todayIso={todayInBolivia().iso}
+        backHref={backHref}
+        ahorroCategories={ahorroCategories}
       />
     </div>
   )

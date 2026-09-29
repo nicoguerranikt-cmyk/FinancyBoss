@@ -14,11 +14,11 @@ import {
   monthRangeFor,
   monthRangeUtcInstantFor,
   todayInBolivia,
-  type CategoryFixedRow,
   type PillarName,
   type PillarRow,
 } from '@/lib/dashboard'
 import { computeDominoPillarAdjustments } from '@/lib/domino'
+import { isFixedExpenseScheduled, monthlyReserveAmount } from '@/lib/fixedExpense'
 import { closeElapsedMonths, getCarriedOverByPillarId } from '@/lib/monthClose'
 import EstadisticasView, {
   type CategoryStat,
@@ -91,11 +91,16 @@ export default async function EstadisticasPage({
     { data: debtors },
     { data: budgetHistory },
   ] = await Promise.all([
-    supabase.from('pillars').select('id, name, percentage').eq('user_id', userId),
-    supabase.from('categories').select('id, name, pillar_id, fixed_amount, deleted_at').eq('user_id', userId),
+    supabase.from('pillars').select('id, name, monthly_amount').eq('user_id', userId),
+    supabase
+      .from('categories')
+      .select(
+        'id, name, pillar_id, fixed_amount, auto_repeat, fixed_start_date, fixed_interval_unit, fixed_interval_count, fixed_reserve_ahead, deleted_at'
+      )
+      .eq('user_id', userId),
     supabase
       .from('transactions')
-      .select('pillar_id, category_id, amount, type, debt_id, debtor_id')
+      .select('pillar_id, category_id, amount, type, debt_id, debtor_id, is_allocation')
       .eq('user_id', userId)
       .gte('date', start)
       .lte('date', end),
@@ -130,19 +135,29 @@ export default async function EstadisticasPage({
       ahorroPillarId,
       gastoPillarId
     )
-    const fixedCategories: CategoryFixedRow[] = (categories ?? [])
-      .filter((c) => !c.deleted_at && c.fixed_amount !== null)
-      .map((c) => ({ id: c.id, pillar_id: c.pillar_id, fixed_amount: c.fixed_amount as number }))
     const carriedOverByPillarId = await getCarriedOverByPillarId(supabase, userId, year, month)
+
+    // isCurrentMonth === true acá siempre (este bloque solo corre en ese
+    // caso), así que la reserva se calcula contra "hoy" de verdad.
+    const daysThisMonth = daysInMonth(year, month)
+    const fixedReserveByPillarId: Record<string, number> = {}
+    const reservedCategoryIds: string[] = []
+    for (const c of categories ?? []) {
+      if (c.deleted_at || !c.auto_repeat || !c.fixed_reserve_ahead || !isFixedExpenseScheduled(c)) continue
+      reservedCategoryIds.push(c.id)
+      const reserve = monthlyReserveAmount(c, today, daysThisMonth)
+      fixedReserveByPillarId[c.pillar_id] = (fixedReserveByPillarId[c.pillar_id] ?? 0) + reserve
+    }
 
     const dashboard = computeDashboard({
       baseIncome,
       pillars: typedPillars,
       transactionsThisMonth: allTx,
-      fixedCategories,
+      fixedReserveByPillarId,
+      reservedCategoryIds,
       dominoPillarAdjustments,
       carriedOverByPillarId,
-      today: { year, month, day: daysInMonth(year, month) },
+      today: { year, month, day: daysThisMonth },
     })
     pillarStats = dashboard.pillars.map((p) => ({
       pillar: p.pillar,
@@ -187,7 +202,12 @@ export default async function EstadisticasPage({
   })
 
   // ---------- Ingreso total del mes ----------
-  const extraIncome = allTx.filter((t) => t.type === 'extra_income').reduce((sum, t) => sum + t.amount, 0)
+  // is_allocation se excluye: es el reparto del propio baseIncome en
+  // categorías (ver migración 0015), no ingreso nuevo — si no, se contaría
+  // dos veces.
+  const extraIncome = allTx
+    .filter((t) => t.type === 'extra_income' && !t.is_allocation)
+    .reduce((sum, t) => sum + t.amount, 0)
   const totalIncome = baseIncome + extraIncome
 
   // ---------- Por subcategoría ----------

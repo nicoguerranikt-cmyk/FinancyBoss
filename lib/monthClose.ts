@@ -18,11 +18,11 @@ import {
   monthRangeFor,
   monthRangeUtcInstantFor,
   todayInBolivia,
-  type CategoryFixedRow,
   type PillarRow,
   type TransactionRow,
 } from '@/lib/dashboard'
 import { computeDominoPillarAdjustments } from '@/lib/domino'
+import { isFixedExpenseScheduled, monthlyReserveAmount } from '@/lib/fixedExpense'
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>
 
@@ -68,11 +68,16 @@ async function closeOneMonth(
 
   const [{ data: pillars }, { data: categories }, { data: transactions }, { data: dominoEvents }, carriedOverByPillarId] =
     await Promise.all([
-      supabase.from('pillars').select('id, name, percentage').eq('user_id', userId),
-      supabase.from('categories').select('id, pillar_id, fixed_amount, deleted_at').eq('user_id', userId),
+      supabase.from('pillars').select('id, name, monthly_amount').eq('user_id', userId),
+      supabase
+        .from('categories')
+        .select(
+          'id, pillar_id, fixed_amount, auto_repeat, fixed_start_date, fixed_interval_unit, fixed_interval_count, fixed_reserve_ahead'
+        )
+        .eq('user_id', userId),
       supabase
         .from('transactions')
-        .select('pillar_id, category_id, amount')
+        .select('pillar_id, category_id, amount, is_allocation')
         .eq('user_id', userId)
         .gte('date', start)
         .lte('date', end),
@@ -96,18 +101,28 @@ async function closeOneMonth(
     gastoPillarId
   )
 
-  const fixedCategories: CategoryFixedRow[] = (categories ?? [])
-    .filter((c) => !c.deleted_at && c.fixed_amount !== null)
-    .map((c) => ({ id: c.id, pillar_id: c.pillar_id, fixed_amount: c.fixed_amount as number }))
+  // Gastos fijos con "reservar desde ya" (mismo criterio que
+  // app/(app)/page.tsx) — se calcula "a fin de ese mes" para que el cierre
+  // quede igual a como se vio en vivo mientras ese mes estaba en curso.
+  const closingDay = { year, month, day: daysInMonth(year, month) }
+  const fixedReserveByPillarId: Record<string, number> = {}
+  const reservedCategoryIds: string[] = []
+  for (const c of categories ?? []) {
+    if (!c.auto_repeat || !c.fixed_reserve_ahead || !isFixedExpenseScheduled(c)) continue
+    reservedCategoryIds.push(c.id)
+    const reserve = monthlyReserveAmount(c, closingDay, daysInMonth(year, month))
+    fixedReserveByPillarId[c.pillar_id] = (fixedReserveByPillarId[c.pillar_id] ?? 0) + reserve
+  }
 
   const dashboard = computeDashboard({
     baseIncome,
     pillars: typedPillars,
     transactionsThisMonth: (transactions ?? []) as TransactionRow[],
-    fixedCategories,
+    fixedReserveByPillarId,
+    reservedCategoryIds,
     dominoPillarAdjustments,
     carriedOverByPillarId,
-    today: { year, month, day: daysInMonth(year, month) },
+    today: closingDay,
   })
 
   const rows = dashboard.pillars.map((p) => ({
@@ -134,6 +149,31 @@ async function closeOneMonth(
       year,
       month,
     })
+  }
+
+  // Dinero libre (migración 0021): lo que sobró este mes (ingreso menos los
+  // 3 montos de pilares, ver computeDashboard) queda acreditado para siempre
+  // — mismo criterio de "aritmética sobre un mes que ya terminó" que el
+  // arrastre de saldo de arriba. Si sobró 0, no hace falta ninguna fila.
+  if (dashboard.freeMoney > 0) {
+    const { error: freeMoneyError } = await supabase.from('free_money_transactions').insert({
+      user_id: userId,
+      amount: dashboard.freeMoney,
+      description: 'Sobrante del mes',
+      date: end,
+      credit_month: month,
+      credit_year: year,
+    })
+    if (freeMoneyError && freeMoneyError.code !== '23505') {
+      console.error('[closeOneMonth] free money insert error:', {
+        message: freeMoneyError.message,
+        details: freeMoneyError.details,
+        hint: freeMoneyError.hint,
+        code: freeMoneyError.code,
+        year,
+        month,
+      })
+    }
   }
 }
 

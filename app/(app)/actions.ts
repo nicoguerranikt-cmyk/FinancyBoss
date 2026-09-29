@@ -2,15 +2,16 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import {
-  computeDashboard,
-  monthRangeInBolivia,
-  monthRangeUtcInstant,
-  todayInBolivia,
-  type CategoryFixedRow,
-} from '@/lib/dashboard'
+import { computeDashboard, daysInMonth, monthRangeInBolivia, monthRangeUtcInstant, todayInBolivia } from '@/lib/dashboard'
 import { EPSILON, buildCaso1Message, computeDominoPillarAdjustments } from '@/lib/domino'
+import { isFixedExpenseScheduled, monthlyReserveAmount } from '@/lib/fixedExpense'
 import { getCarriedOverByPillarId } from '@/lib/monthClose'
+
+// Solo para excluir el gasto de una categoría fija de "cuánto gastaste HOY"
+// (Caso 1 del dominó, más abajo) — un gasto fijo no es un antojo del día,
+// es plata comprometida por configuración. Sin relación con computeDashboard
+// (que ya no reserva nada por adelantado, ver lib/dashboard.ts).
+type CategoryFixedRow = { id: string; pillar_id: string; fixed_amount: number }
 
 export type RegisterTransactionInput = {
   type: 'expense' | 'extra_income'
@@ -144,11 +145,16 @@ async function checkDominoAfterTransaction(
   const [{ data: profile }, { data: pillars }, { data: categories }, { data: transactions }, { data: dominoEvents }, carriedOverByPillarId] =
     await Promise.all([
       supabase.from('profiles').select('base_income').eq('id', ctx.userId).single(),
-      supabase.from('pillars').select('id, name, percentage').eq('user_id', ctx.userId),
+      supabase.from('pillars').select('id, name, monthly_amount').eq('user_id', ctx.userId),
       // Sin filtro de deleted_at: una categoría que fue afectada por un
       // dominó anterior este mes y se borró después igual tiene que poder
       // mapearse a su pilar más abajo (mismo motivo que en page.tsx).
-      supabase.from('categories').select('id, pillar_id, fixed_amount, deleted_at').eq('user_id', ctx.userId),
+      supabase
+        .from('categories')
+        .select(
+          'id, pillar_id, fixed_amount, auto_repeat, fixed_start_date, fixed_interval_unit, fixed_interval_count, fixed_reserve_ahead, deleted_at'
+        )
+        .eq('user_id', ctx.userId),
       supabase
         .from('transactions')
         .select('pillar_id, category_id, amount, date')
@@ -182,10 +188,24 @@ async function checkDominoAfterTransaction(
   const allTx = transactions ?? []
   const beforeTodayTx = allTx.filter((t) => t.date < todayIso)
 
+  // Gastos fijos con "reservar desde ya" (mismo criterio que
+  // app/(app)/page.tsx) — necesario acá también para que el "antes/después"
+  // de hoy que compara el dominó sea consistente con lo que ve el Dashboard.
+  const daysThisMonth = daysInMonth(today.year, today.month)
+  const fixedReserveByPillarId: Record<string, number> = {}
+  const reservedCategoryIds: string[] = []
+  for (const c of categories ?? []) {
+    if (c.deleted_at || !c.auto_repeat || !c.fixed_reserve_ahead || !isFixedExpenseScheduled(c)) continue
+    reservedCategoryIds.push(c.id)
+    const reserve = monthlyReserveAmount(c, today, daysThisMonth)
+    fixedReserveByPillarId[c.pillar_id] = (fixedReserveByPillarId[c.pillar_id] ?? 0) + reserve
+  }
+
   const base = {
     baseIncome: profile.base_income,
     pillars,
-    fixedCategories,
+    fixedReserveByPillarId,
+    reservedCategoryIds,
     dominoPillarAdjustments,
     carriedOverByPillarId,
   }
@@ -385,7 +405,7 @@ export async function resolveDeficit(input: ResolveDeficitInput): Promise<{ erro
       name,
       total_amount: input.amount,
       remaining_amount: input.amount,
-      monthly_payment: null,
+      auto_pay_amount: null,
       status: 'active',
     })
     .select('id')

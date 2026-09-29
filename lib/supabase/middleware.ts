@@ -56,10 +56,16 @@ export async function updateSession(request: NextRequest) {
 
   const path = request.nextUrl.pathname
 
-  // Sin usuario y ruta protegida -> a login.
+  // Sin usuario y ruta protegida -> a login, con "next" para volver acá
+  // mismo después de loguearse (ej. un link de invitación de deuda
+  // compartida — sin esto, el login siempre mandaba al Dashboard y se
+  // perdía a dónde querías ir en realidad).
   if (!user && !isPublic(path)) {
     const url = request.nextUrl.clone()
+    const next = url.pathname + url.search
     url.pathname = '/login'
+    url.search = ''
+    url.searchParams.set('next', next)
     const redirectResponse = NextResponse.redirect(url)
     // Preservamos las cookies que Supabase pudo haber refrescado.
     supabaseResponse.cookies.getAll().forEach((cookie) =>

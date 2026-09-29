@@ -4,23 +4,15 @@
 // pago (a mano o de un plan automático) sí resta, en el momento en que se
 // registra — siempre contra un pilar específico (+ categoría opcional,
 // nunca de gasto fijo). Por defecto Gasto, sin categoría.
+//
+// Solo la lista — "Nueva deuda" vive en NewDebtForm.tsx, arriba de todo en
+// la página (pedido del usuario: crear arriba, ver acumulado abajo).
 
 import { useState } from 'react'
 import { formatBs } from '@/lib/format'
+import type { AutoPayInterval } from '@/lib/debts'
 import PillarCategoryFields, { type CategoryRow, type PillarRow } from '../PillarCategoryFields'
-import {
-  archiveDebt,
-  confirmAutoPayment,
-  createDebt,
-  markDebtPaid,
-  registerPayment,
-  type CreateDebtInput,
-} from './actions'
-
-const MONTH_LABEL = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-]
+import { archiveDebt, confirmAutoPayment, markDebtPaid, registerPayment, updateAutoPay } from './actions'
 
 type DebtRow = {
   id: string
@@ -28,31 +20,45 @@ type DebtRow = {
   total_amount: number
   remaining_amount: number
   status: 'active' | 'paid'
-  monthly_payment: number | null
-  auto_pay_start_year: number | null
-  auto_pay_start_month: number | null
-  auto_pay_start_day: number | null
+  auto_pay_amount: number | null
+  auto_pay_start_date: string | null
+  auto_pay_interval_unit: AutoPayInterval | null
+  auto_pay_interval_count: number | null
   auto_pay_pillar_id: string | null
   auto_pay_category_id: string | null
 }
 
+// '2026-09-17' -> '17/09/2026', para mostrar la fecha en el resumen de la
+// deuda (los inputs de fecha siguen guardando/mandando el formato ISO).
+function formatDateBs(iso: string): string {
+  const [year, month, day] = iso.split('-')
+  return `${day}/${month}/${year}`
+}
+
+function frequencyLabel(unit: AutoPayInterval, count: number): string {
+  if (unit === 'day') return count === 1 ? 'cada día' : `cada ${count} días`
+  return count === 1 ? 'cada mes' : `cada ${count} meses`
+}
+
 const inputClass =
-  'rounded-lg border border-zinc-300 px-3 py-1.5 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100'
+  'rounded-lg border border-zinc-300 px-3 py-1.5 text-sm outline-none focus:border-brand dark:border-zinc-700 dark:focus:border-brand'
 const secondaryButtonClass =
   'rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:hover:bg-zinc-800'
 const primaryButtonClass =
-  'rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'
+  'rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand/90 disabled:opacity-40 dark:text-zinc-950'
 
 export default function DeudasClient({
   debts,
   pillars,
   categories,
   pendingAutoPayIds,
+  todayIso,
 }: {
   debts: DebtRow[]
   pillars: PillarRow[]
   categories: CategoryRow[]
   pendingAutoPayIds: string[]
+  todayIso: string
 }) {
   const gastoPillarId = pillars.find((p) => p.name === 'gasto')?.id ?? ''
   const pendingSet = new Set(pendingAutoPayIds)
@@ -114,6 +120,70 @@ export default function DeudasClient({
     }
   }
 
+  // ---------- Editar/quitar pago automático de una deuda ya creada ----------
+  const [autoPayEditingId, setAutoPayEditingId] = useState<string | null>(null)
+  const [editAutoPayAmount, setEditAutoPayAmount] = useState('')
+  const [editAutoPayStartDate, setEditAutoPayStartDate] = useState(todayIso)
+  const [editAutoPayIntervalUnit, setEditAutoPayIntervalUnit] = useState<AutoPayInterval>('month')
+  const [editAutoPayIntervalCount, setEditAutoPayIntervalCount] = useState('1')
+  const [editAutoPayPillarId, setEditAutoPayPillarId] = useState('')
+  const [editAutoPayCategoryId, setEditAutoPayCategoryId] = useState('')
+  const [autoPaySaving, setAutoPaySaving] = useState<Record<string, boolean>>({})
+  const [autoPayError, setAutoPayError] = useState<Record<string, string | null>>({})
+
+  function openAutoPayEdit(debt: DebtRow) {
+    setAutoPayEditingId(debt.id)
+    setEditAutoPayAmount(debt.auto_pay_amount !== null ? String(debt.auto_pay_amount) : '')
+    setEditAutoPayStartDate(debt.auto_pay_start_date ?? todayIso)
+    setEditAutoPayIntervalUnit(debt.auto_pay_interval_unit ?? 'month')
+    setEditAutoPayIntervalCount(debt.auto_pay_interval_count !== null ? String(debt.auto_pay_interval_count) : '1')
+    setEditAutoPayPillarId(debt.auto_pay_pillar_id ?? gastoPillarId)
+    setEditAutoPayCategoryId(debt.auto_pay_category_id ?? '')
+    setAutoPayError((prev) => ({ ...prev, [debt.id]: null }))
+  }
+
+  async function handleSaveAutoPay(debtId: string) {
+    if (!editAutoPayPillarId) {
+      setAutoPayError((prev) => ({ ...prev, [debtId]: 'Elegí de qué pilar sale el pago automático.' }))
+      return
+    }
+    if (!editAutoPayStartDate) {
+      setAutoPayError((prev) => ({ ...prev, [debtId]: 'Elegí la fecha del primer pago.' }))
+      return
+    }
+    if (!(Number(editAutoPayIntervalCount) > 0)) {
+      setAutoPayError((prev) => ({ ...prev, [debtId]: 'La frecuencia debe ser mayor a 0.' }))
+      return
+    }
+
+    setAutoPaySaving((prev) => ({ ...prev, [debtId]: true }))
+    setAutoPayError((prev) => ({ ...prev, [debtId]: null }))
+    const res = await updateAutoPay({
+      debtId,
+      autoPay: {
+        amount: Number(editAutoPayAmount),
+        startDate: editAutoPayStartDate,
+        intervalUnit: editAutoPayIntervalUnit,
+        intervalCount: Number(editAutoPayIntervalCount),
+        pillarId: editAutoPayPillarId,
+        categoryId: editAutoPayCategoryId || null,
+      },
+    })
+    setAutoPaySaving((prev) => ({ ...prev, [debtId]: false }))
+    if (res.error) {
+      setAutoPayError((prev) => ({ ...prev, [debtId]: res.error! }))
+    } else {
+      setAutoPayEditingId(null)
+    }
+  }
+
+  async function handleRemoveAutoPay(debtId: string) {
+    setAutoPaySaving((prev) => ({ ...prev, [debtId]: true }))
+    await updateAutoPay({ debtId, autoPay: null })
+    setAutoPaySaving((prev) => ({ ...prev, [debtId]: false }))
+    setAutoPayEditingId(null)
+  }
+
   // ---------- Marcar como pagada ----------
   const [confirmingPaidId, setConfirmingPaidId] = useState<string | null>(null)
   const [markSaving, setMarkSaving] = useState<Record<string, boolean>>({})
@@ -136,322 +206,258 @@ export default function DeudasClient({
     setConfirmingArchiveId(null)
   }
 
-  // ---------- Nueva deuda ----------
-  const now = new Date()
-  const [newName, setNewName] = useState('')
-  const [newTotal, setNewTotal] = useState('')
-  const [autoPayEnabled, setAutoPayEnabled] = useState(false)
-  const [autoPayAmount, setAutoPayAmount] = useState('')
-  const [autoPayMonth, setAutoPayMonth] = useState(now.getMonth() + 1)
-  const [autoPayYear, setAutoPayYear] = useState(now.getFullYear())
-  const [autoPayDay, setAutoPayDay] = useState('')
-  const [autoPayPillarId, setAutoPayPillarId] = useState(gastoPillarId)
-  const [autoPayCategoryId, setAutoPayCategoryId] = useState('')
-  const [creating, setCreating] = useState(false)
-  const [createError, setCreateError] = useState<string | null>(null)
-
-  async function handleCreateDebt() {
-    const name = newName.trim()
-    const totalAmount = Number(newTotal)
-    if (!name) return setCreateError('Ingresá un nombre para la deuda.')
-    if (!(totalAmount > 0)) return setCreateError('El monto debe ser mayor a 0.')
-    if (autoPayEnabled && !autoPayPillarId) return setCreateError('Elegí de qué pilar sale el pago automático.')
-
-    const autoPay: CreateDebtInput['autoPay'] = autoPayEnabled
-      ? {
-          monthlyAmount: Number(autoPayAmount),
-          startYear: autoPayYear,
-          startMonth: autoPayMonth,
-          startDay: autoPayDay ? Number(autoPayDay) : null,
-          pillarId: autoPayPillarId,
-          categoryId: autoPayCategoryId || null,
-        }
-      : undefined
-
-    setCreating(true)
-    setCreateError(null)
-    const res = await createDebt({ name, totalAmount, autoPay })
-    setCreating(false)
-    if (res.error) {
-      setCreateError(res.error)
-    } else {
-      setNewName('')
-      setNewTotal('')
-      setAutoPayEnabled(false)
-      setAutoPayAmount('')
-      setAutoPayDay('')
-      setAutoPayPillarId(gastoPillarId)
-      setAutoPayCategoryId('')
-    }
-  }
-
   const activeDebts = debts.filter((d) => d.status === 'active')
   const paidDebts = debts.filter((d) => d.status === 'paid')
 
   return (
-    <div className="flex flex-col gap-8">
-      <section>
-        <h1 className="text-xl font-semibold tracking-tight">Deudas</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Crear una deuda no resta nada. Solo un pago registrado resta, en el momento en que lo
-          registrás.
-        </p>
-      </section>
+    <section className="flex flex-col gap-3">
+      {debts.length === 0 && <p className="text-sm text-zinc-500">Todavía no tenés deudas cargadas.</p>}
 
-      <section className="flex flex-col gap-3">
-        {debts.length === 0 && <p className="text-sm text-zinc-500">Todavía no tenés deudas cargadas.</p>}
+      {[...activeDebts, ...paidDebts].map((debt) => {
+        const progress = debt.total_amount > 0 ? (1 - debt.remaining_amount / debt.total_amount) * 100 : 100
+        const isPaid = debt.status === 'paid'
 
-        {[...activeDebts, ...paidDebts].map((debt) => {
-          const progress = debt.total_amount > 0 ? (1 - debt.remaining_amount / debt.total_amount) * 100 : 100
-          const isPaid = debt.status === 'paid'
+        return (
+          <div key={debt.id} className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium">{debt.name}</span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                  isPaid
+                    ? 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-400'
+                    : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
+                }`}
+              >
+                {isPaid ? 'Pagada' : 'Activa'}
+              </span>
+            </div>
 
-          return (
-            <div key={debt.id} className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-medium">{debt.name}</span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                    isPaid
-                      ? 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-400'
-                      : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
-                  }`}
+            <p className="mt-1 text-sm text-zinc-500">
+              {formatBs(debt.remaining_amount)} Bs pendientes de {formatBs(debt.total_amount)} Bs
+            </p>
+            <div className="mt-2 h-1.5 w-full rounded-full bg-zinc-100 dark:bg-zinc-800">
+              <div
+                className="h-1.5 rounded-full bg-brand"
+                style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+              />
+            </div>
+            {!isPaid && autoPayEditingId !== debt.id && (
+              <p className="mt-2 text-xs text-zinc-500">
+                {debt.auto_pay_amount !== null && debt.auto_pay_interval_unit ? (
+                  <>
+                    Pago automático: {formatBs(debt.auto_pay_amount)} Bs{' '}
+                    {frequencyLabel(debt.auto_pay_interval_unit, debt.auto_pay_interval_count ?? 1)}, desde el{' '}
+                    {formatDateBs(debt.auto_pay_start_date as string)}
+                    {' — '}
+                  </>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => openAutoPayEdit(debt)}
+                  className="font-medium text-brand hover:underline"
                 >
-                  {isPaid ? 'Pagada' : 'Activa'}
-                </span>
-              </div>
-
-              <p className="mt-1 text-sm text-zinc-500">
-                {formatBs(debt.remaining_amount)} Bs pendientes de {formatBs(debt.total_amount)} Bs
+                  {debt.auto_pay_amount !== null ? 'Editar' : 'Programar pago automático'}
+                </button>
               </p>
-              <div className="mt-2 h-1.5 w-full rounded-full bg-zinc-100 dark:bg-zinc-800">
-                <div
-                  className="h-1.5 rounded-full bg-zinc-900 dark:bg-zinc-100"
-                  style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
-                />
-              </div>
-              {debt.monthly_payment !== null && !isPaid && (
-                <p className="mt-2 text-xs text-zinc-500">
-                  Plan automático: {formatBs(debt.monthly_payment)} Bs/mes
-                  {debt.auto_pay_start_day ? ` el día ${debt.auto_pay_start_day}` : ''} desde{' '}
-                  {MONTH_LABEL[(debt.auto_pay_start_month ?? 1) - 1]} {debt.auto_pay_start_year}
-                </p>
-              )}
+            )}
 
-              {!isPaid && pendingSet.has(debt.id) && (
-                <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
-                  <span>
-                    Te toca pagar {formatBs(debt.monthly_payment ?? 0)} Bs de &quot;{debt.name}&quot; este mes.
-                  </span>
-                  <button
-                    onClick={() => handleConfirmAutoPayment(debt.id)}
-                    disabled={confirmAutoSaving[debt.id]}
-                    className="rounded-lg bg-amber-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-amber-800 disabled:opacity-40"
+            {!isPaid && autoPayEditingId === debt.id && (
+              <div className="mt-2 flex flex-col gap-2 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+                <input
+                  type="number"
+                  onWheel={(e) => e.currentTarget.blur()}
+                  min={0}
+                  placeholder="Cuota (Bs)"
+                  value={editAutoPayAmount}
+                  onChange={(e) => setEditAutoPayAmount(e.target.value)}
+                  className={inputClass}
+                />
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-zinc-500">Fecha del primer pago</label>
+                  <input
+                    type="date"
+                    value={editAutoPayStartDate}
+                    onChange={(e) => setEditAutoPayStartDate(e.target.value)}
+                    className={`${inputClass} [color-scheme:light] dark:[color-scheme:dark]`}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-zinc-500">Repetir cada</span>
+                  <input
+                    type="number"
+                    onWheel={(e) => e.currentTarget.blur()}
+                    min={1}
+                    value={editAutoPayIntervalCount}
+                    onChange={(e) => setEditAutoPayIntervalCount(e.target.value)}
+                    className={`${inputClass} w-16 text-right`}
+                  />
+                  <select
+                    value={editAutoPayIntervalUnit}
+                    onChange={(e) => setEditAutoPayIntervalUnit(e.target.value as AutoPayInterval)}
+                    className={`${inputClass} flex-1 [color-scheme:light] dark:[color-scheme:dark]`}
                   >
-                    {confirmAutoSaving[debt.id] ? 'Guardando…' : 'Ya la pagué'}
+                    <option value="day" className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
+                      días
+                    </option>
+                    <option value="month" className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
+                      meses
+                    </option>
+                  </select>
+                </div>
+                <PillarCategoryFields
+                  pillars={pillars}
+                  categories={categories}
+                  pillarId={editAutoPayPillarId}
+                  setPillarId={setEditAutoPayPillarId}
+                  categoryId={editAutoPayCategoryId}
+                  setCategoryId={setEditAutoPayCategoryId}
+                />
+                {autoPayError[debt.id] && (
+                  <p className="text-sm text-red-600" role="alert">
+                    {autoPayError[debt.id]}
+                  </p>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => handleSaveAutoPay(debt.id)}
+                    disabled={autoPaySaving[debt.id]}
+                    className={primaryButtonClass}
+                  >
+                    {autoPaySaving[debt.id] ? 'Guardando…' : 'Guardar'}
                   </button>
-                  {confirmAutoError[debt.id] && (
-                    <p className="w-full text-red-600" role="alert">
-                      {confirmAutoError[debt.id]}
-                    </p>
+                  <button onClick={() => setAutoPayEditingId(null)} className={secondaryButtonClass}>
+                    Cancelar
+                  </button>
+                  {debt.auto_pay_amount !== null && (
+                    <button
+                      onClick={() => handleRemoveAutoPay(debt.id)}
+                      disabled={autoPaySaving[debt.id]}
+                      className="text-sm font-medium text-red-600 hover:text-red-700"
+                    >
+                      Quitar plan automático
+                    </button>
                   )}
                 </div>
-              )}
+              </div>
+            )}
 
-              {!isPaid && (
-                <>
-                  {paymentOpenId === debt.id ? (
-                    <div className="mt-3 flex flex-col gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
-                      <input
-                        type="number"
-            onWheel={(e) => e.currentTarget.blur()}
-                        min={0}
-                        placeholder="Monto (Bs)"
-                        value={paymentAmount}
-                        onChange={(e) => setPaymentAmount(e.target.value)}
-                        className={inputClass}
-                      />
-                      <PillarCategoryFields
-                        pillars={pillars}
-                        categories={categories}
-                        pillarId={paymentPillarId}
-                        setPillarId={setPaymentPillarId}
-                        categoryId={paymentCategoryId}
-                        setCategoryId={setPaymentCategoryId}
-                      />
-                      {paymentError[debt.id] && (
-                        <p className="text-sm text-red-600" role="alert">
-                          {paymentError[debt.id]}
-                        </p>
-                      )}
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleRegisterPayment(debt.id)}
-                          disabled={paymentSaving[debt.id]}
-                          className={primaryButtonClass}
-                        >
-                          {paymentSaving[debt.id] ? 'Guardando…' : 'Confirmar pago'}
-                        </button>
-                        <button onClick={() => setPaymentOpenId(null)} className={secondaryButtonClass}>
-                          Cancelar
-                        </button>
-                      </div>
-                    </div>
-                  ) : confirmingPaidId === debt.id ? (
-                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
-                      <p className="text-sm text-zinc-500">¿Marcar &quot;{debt.name}&quot; como pagada?</p>
+            {!isPaid && pendingSet.has(debt.id) && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+                <span>
+                  Te toca pagar {formatBs(debt.auto_pay_amount ?? 0)} Bs de &quot;{debt.name}&quot;.
+                </span>
+                <button
+                  onClick={() => handleConfirmAutoPayment(debt.id)}
+                  disabled={confirmAutoSaving[debt.id]}
+                  className="rounded-lg bg-amber-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-amber-800 disabled:opacity-40"
+                >
+                  {confirmAutoSaving[debt.id] ? 'Guardando…' : 'Ya la pagué'}
+                </button>
+                {confirmAutoError[debt.id] && (
+                  <p className="w-full text-red-600" role="alert">
+                    {confirmAutoError[debt.id]}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {!isPaid && (
+              <>
+                {paymentOpenId === debt.id ? (
+                  <div className="mt-3 flex flex-col gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+                    <input
+                      type="number"
+                      onWheel={(e) => e.currentTarget.blur()}
+                      min={0}
+                      placeholder="Monto (Bs)"
+                      value={paymentAmount}
+                      onChange={(e) => setPaymentAmount(e.target.value)}
+                      className={inputClass}
+                    />
+                    <PillarCategoryFields
+                      pillars={pillars}
+                      categories={categories}
+                      pillarId={paymentPillarId}
+                      setPillarId={setPaymentPillarId}
+                      categoryId={paymentCategoryId}
+                      setCategoryId={setPaymentCategoryId}
+                    />
+                    {paymentError[debt.id] && (
+                      <p className="text-sm text-red-600" role="alert">
+                        {paymentError[debt.id]}
+                      </p>
+                    )}
+                    <div className="flex gap-2">
                       <button
-                        onClick={() => handleMarkPaid(debt.id)}
-                        disabled={markSaving[debt.id]}
-                        className="rounded-lg bg-red-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-800 disabled:opacity-40"
+                        onClick={() => handleRegisterPayment(debt.id)}
+                        disabled={paymentSaving[debt.id]}
+                        className={primaryButtonClass}
                       >
-                        Sí, marcar pagada
+                        {paymentSaving[debt.id] ? 'Guardando…' : 'Confirmar pago'}
                       </button>
-                      <button onClick={() => setConfirmingPaidId(null)} className={secondaryButtonClass}>
+                      <button onClick={() => setPaymentOpenId(null)} className={secondaryButtonClass}>
                         Cancelar
                       </button>
                     </div>
-                  ) : (
-                    <div className="mt-3 flex items-center gap-3">
-                      <button onClick={() => openPayment(debt.id)} className={secondaryButtonClass}>
-                        Registrar pago
-                      </button>
-                      <button
-                        onClick={() => setConfirmingPaidId(debt.id)}
-                        className="text-sm font-medium text-red-600 hover:text-red-700"
-                      >
-                        Marcar como pagada
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {isPaid &&
-                (confirmingArchiveId === debt.id ? (
+                  </div>
+                ) : confirmingPaidId === debt.id ? (
                   <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
-                    <p className="text-sm text-zinc-500">¿Archivar &quot;{debt.name}&quot;?</p>
+                    <p className="text-sm text-zinc-500">¿Marcar &quot;{debt.name}&quot; como pagada?</p>
                     <button
-                      onClick={() => handleArchive(debt.id)}
-                      disabled={archiveSaving[debt.id]}
+                      onClick={() => handleMarkPaid(debt.id)}
+                      disabled={markSaving[debt.id]}
                       className="rounded-lg bg-red-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-800 disabled:opacity-40"
                     >
-                      Sí, archivar
+                      Sí, marcar pagada
                     </button>
-                    <button onClick={() => setConfirmingArchiveId(null)} className={secondaryButtonClass}>
+                    <button onClick={() => setConfirmingPaidId(null)} className={secondaryButtonClass}>
                       Cancelar
                     </button>
                   </div>
                 ) : (
-                  <div className="mt-3">
+                  <div className="mt-3 flex items-center gap-3">
+                    <button onClick={() => openPayment(debt.id)} className={secondaryButtonClass}>
+                      Registrar pago
+                    </button>
                     <button
-                      onClick={() => setConfirmingArchiveId(debt.id)}
+                      onClick={() => setConfirmingPaidId(debt.id)}
                       className="text-sm font-medium text-red-600 hover:text-red-700"
                     >
-                      Archivar
+                      Marcar como pagada
                     </button>
                   </div>
-                ))}
-            </div>
-          )
-        })}
-      </section>
+                )}
+              </>
+            )}
 
-      <section>
-        <h2 className="text-lg font-semibold tracking-tight">+ Nueva deuda</h2>
-        <div className="mt-3 flex flex-col gap-2">
-          <input
-            type="text"
-            placeholder="Nombre (ej. Tarjeta Banco X)"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            className={inputClass}
-          />
-          <input
-            type="number"
-            onWheel={(e) => e.currentTarget.blur()}
-            min={0}
-            placeholder="Monto total (Bs)"
-            value={newTotal}
-            onChange={(e) => setNewTotal(e.target.value)}
-            className={inputClass}
-          />
-
-          <label className="mt-1 flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={autoPayEnabled}
-              onChange={(e) => setAutoPayEnabled(e.target.checked)}
-              className="h-4 w-4"
-            />
-            Configurar plan de pago automático
-          </label>
-
-          {autoPayEnabled && (
-            <div className="flex flex-col gap-2 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
-              <input
-                type="number"
-            onWheel={(e) => e.currentTarget.blur()}
-                min={0}
-                placeholder="Cuota fija (Bs)"
-                value={autoPayAmount}
-                onChange={(e) => setAutoPayAmount(e.target.value)}
-                className={inputClass}
-              />
-              <div className="flex gap-2">
-                <select
-                  value={autoPayMonth}
-                  onChange={(e) => setAutoPayMonth(Number(e.target.value))}
-                  className={`${inputClass} flex-1 [color-scheme:light] dark:[color-scheme:dark]`}
-                >
-                  {MONTH_LABEL.map((label, i) => (
-                    <option key={label} value={i + 1}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="number"
-            onWheel={(e) => e.currentTarget.blur()}
-                  value={autoPayYear}
-                  onChange={(e) => setAutoPayYear(Number(e.target.value))}
-                  className={`${inputClass} w-24`}
-                />
-              </div>
-              <input
-                type="number"
-                onWheel={(e) => e.currentTarget.blur()}
-                min={1}
-                max={31}
-                placeholder="Día del mes (opcional, ej. 20)"
-                value={autoPayDay}
-                onChange={(e) => setAutoPayDay(e.target.value)}
-                className={inputClass}
-              />
-              <p className="text-xs text-zinc-500">
-                Si dejás el día vacío, el recordatorio aparece desde el 1° del mes de inicio.
-              </p>
-              <PillarCategoryFields
-                pillars={pillars}
-                categories={categories}
-                pillarId={autoPayPillarId}
-                setPillarId={setAutoPayPillarId}
-                categoryId={autoPayCategoryId}
-                setCategoryId={setAutoPayCategoryId}
-              />
-            </div>
-          )}
-
-          {createError && (
-            <p className="text-sm text-red-600" role="alert">
-              {createError}
-            </p>
-          )}
-
-          <button onClick={handleCreateDebt} disabled={creating} className={`mt-1 ${primaryButtonClass}`}>
-            {creating ? 'Guardando…' : '+ Agregar deuda'}
-          </button>
-        </div>
-      </section>
-    </div>
+            {isPaid &&
+              (confirmingArchiveId === debt.id ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+                  <p className="text-sm text-zinc-500">¿Archivar &quot;{debt.name}&quot;?</p>
+                  <button
+                    onClick={() => handleArchive(debt.id)}
+                    disabled={archiveSaving[debt.id]}
+                    className="rounded-lg bg-red-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-800 disabled:opacity-40"
+                  >
+                    Sí, archivar
+                  </button>
+                  <button onClick={() => setConfirmingArchiveId(null)} className={secondaryButtonClass}>
+                    Cancelar
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-3">
+                  <button
+                    onClick={() => setConfirmingArchiveId(debt.id)}
+                    className="text-sm font-medium text-red-600 hover:text-red-700"
+                  >
+                    Archivar
+                  </button>
+                </div>
+              ))}
+          </div>
+        )
+      })}
+    </section>
   )
 }

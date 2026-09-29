@@ -22,11 +22,15 @@ const PILLAR_LABEL: Record<PillarKey, string> = {
 
 type CatItem = { name: string; checked: boolean }
 
+// Sin marcar por default: si el usuario no toca nada acá, termina con solo
+// las 3 categorías "general" (las crea complete_onboarding() aparte,
+// siempre) — cualquier otra categoría tiene que ser una elección a
+// propósito, nunca algo que "vino solo" por pasar rápido este paso.
 function initialCats(): Record<PillarKey, CatItem[]> {
   return {
-    ahorro: SUGGESTED.ahorro.map((name) => ({ name, checked: true })),
-    gasto: SUGGESTED.gasto.map((name) => ({ name, checked: true })),
-    inversion: SUGGESTED.inversion.map((name) => ({ name, checked: true })),
+    ahorro: SUGGESTED.ahorro.map((name) => ({ name, checked: false })),
+    gasto: SUGGESTED.gasto.map((name) => ({ name, checked: false })),
+    inversion: SUGGESTED.inversion.map((name) => ({ name, checked: false })),
   }
 }
 
@@ -43,8 +47,10 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
   const [income, setIncome] = useState('')
   const [autoRepeat, setAutoRepeat] = useState(true)
 
-  // Paso 2 — pilares (valores que suman 100 por default, ajustables)
-  const [pct, setPct] = useState({ ahorro: 20, gasto: 60, inversion: 20 })
+  // Paso 2 — pilares (montos en Bs, migración 0020 — ya no %). Arrancan
+  // vacíos y se sugiere un reparto 20/60/20 recién al entrar a este paso,
+  // cuando ya se conoce el ingreso del paso 1.
+  const [amounts, setAmounts] = useState({ ahorro: '', gasto: '', inversion: '' })
 
   // Paso 3 — categorías
   const [cats, setCats] = useState<Record<PillarKey, CatItem[]>>(initialCats)
@@ -58,14 +64,27 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
   const [submitting, setSubmitting] = useState(false)
 
   const incomeNumber = Number(income) || 0
-  const pctSum = pct.ahorro + pct.gasto + pct.inversion
+  const amountsSum = (Number(amounts.ahorro) || 0) + (Number(amounts.gasto) || 0) + (Number(amounts.inversion) || 0)
+  const freeMoney = Math.max(0, incomeNumber - amountsSum)
 
   const canContinueIncome = incomeNumber > 0
-  const canContinuePillars = Math.round(pctSum) === 100
+  const canContinuePillars = amountsSum <= incomeNumber
 
-  function setPillarPct(key: PillarKey, value: string) {
-    const n = Math.max(0, Math.min(100, Math.round(Number(value) || 0)))
-    setPct((prev) => ({ ...prev, [key]: n }))
+  function goToPillars() {
+    // Sugerencia inicial 20/60/20, solo la primera vez que se llega acá.
+    if (amounts.ahorro === '' && amounts.gasto === '' && amounts.inversion === '') {
+      setAmounts({
+        ahorro: String(Math.round(incomeNumber * 0.2)),
+        gasto: String(Math.round(incomeNumber * 0.6)),
+        inversion: String(Math.round(incomeNumber * 0.2)),
+      })
+    }
+    setStep(2)
+  }
+
+  function setPillarAmount(key: PillarKey, value: string) {
+    const n = Math.max(0, Math.round(Number(value) || 0))
+    setAmounts((prev) => ({ ...prev, [key]: String(n) }))
   }
 
   function toggleCat(pillar: PillarKey, index: number) {
@@ -105,7 +124,11 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
     const res = await completeOnboarding({
       income: incomeNumber,
       autoRepeat,
-      pillars: pct,
+      pillars: {
+        ahorro: Number(amounts.ahorro) || 0,
+        gasto: Number(amounts.gasto) || 0,
+        inversion: Number(amounts.inversion) || 0,
+      },
       categories: selectedCategories,
     })
     // Si hubo éxito, completeOnboarding redirige y no llegamos acá.
@@ -142,7 +165,7 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
                 Tu plata se divide en <strong>3 pilares</strong>: Ahorro, Gasto e Inversión.
               </li>
               <li className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-                <strong>Vos decidís</strong> qué % va a cada uno.
+                <strong>Vos decidís</strong> cuánta plata va a cada uno.
               </li>
               <li className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
                 Cuando te excedás en algo, te decimos <strong>exactamente qué meta</strong> estás sacrificando.
@@ -200,7 +223,7 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
                 Atrás
               </button>
               <button
-                onClick={() => setStep(2)}
+                onClick={goToPillars}
                 disabled={!canContinueIncome}
                 className="flex-1 rounded-lg bg-zinc-900 py-2.5 font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
               >
@@ -215,29 +238,26 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
           <section>
             <h2 className="text-xl font-semibold tracking-tight">Distribución de pilares</h2>
             <p className="mt-1 text-sm text-zinc-500">
-              Definí qué porcentaje de tu ingreso va a cada pilar. Tienen que sumar 100%.
+              Definí cuánto de tu ingreso ({formatBs(incomeNumber)} Bs) va a cada pilar, en Bs. No
+              hace falta usarlo todo — lo que sobre queda como dinero libre.
             </p>
 
             <div className="mt-6 flex flex-col gap-4">
               {PILLAR_KEYS.map((key) => (
                 <div key={key} className="flex items-center gap-3">
-                  <label htmlFor={`pct-${key}`} className="w-24 text-sm font-medium">
+                  <label htmlFor={`amount-${key}`} className="w-24 text-sm font-medium">
                     {PILLAR_LABEL[key]}
                   </label>
                   <input
-                    id={`pct-${key}`}
+                    id={`amount-${key}`}
                     type="number"
-                onWheel={(e) => e.currentTarget.blur()}
+                    onWheel={(e) => e.currentTarget.blur()}
                     min={0}
-                    max={100}
-                    value={pct[key]}
-                    onChange={(e) => setPillarPct(key, e.target.value)}
-                    className="w-20 rounded-lg border border-zinc-300 px-2 py-1.5 text-right outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
+                    value={amounts[key]}
+                    onChange={(e) => setPillarAmount(key, e.target.value)}
+                    className="w-24 rounded-lg border border-zinc-300 px-2 py-1.5 text-right outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
                   />
-                  <span className="text-sm text-zinc-500">%</span>
-                  <span className="ml-auto text-sm tabular-nums text-zinc-500">
-                    {formatBs((incomeNumber * pct[key]) / 100)} Bs
-                  </span>
+                  <span className="text-sm text-zinc-500">Bs</span>
                 </div>
               ))}
             </div>
@@ -251,8 +271,8 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
               }`}
             >
               {canContinuePillars
-                ? 'Perfecto, suman 100%.'
-                : `Suman ${pctSum}%. Ajustá para llegar a 100%.`}
+                ? `Te quedan ${formatBs(freeMoney)} Bs libres de tu ingreso.`
+                : `Suman ${formatBs(amountsSum)} Bs, más que tu ingreso (${formatBs(incomeNumber)} Bs).`}
             </div>
 
             <div className="mt-8 flex gap-3">
@@ -321,7 +341,7 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
                       onClick={() => addCat(pillar)}
                       className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
                     >
-                      + Agregar
+                      Agregar
                     </button>
                   </div>
                 </div>

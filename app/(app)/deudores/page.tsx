@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { todayInBolivia } from '@/lib/dashboard'
 import SharedDebtsSection, { type PendingSharedPayment, type SharedDebtRow } from '../shared-debts/SharedDebtsSection'
 import DeudoresClient from './DeudoresClient'
+import NewDebtorForm from './NewDebtorForm'
 import PageReadySignal from '../PageReadySignal'
 
 export default async function DeudoresPage() {
@@ -15,6 +16,7 @@ export default async function DeudoresPage() {
   } = await supabase.auth.getUser()
   // El layout ya garantiza que hay sesión y perfil; user siempre existe acá.
   const userId = user!.id
+  const todayIso = todayInBolivia().iso
 
   const [{ data: debtors }, { data: pillars }, { data: categories }, { data: sharedRows }] = await Promise.all([
     supabase
@@ -23,7 +25,7 @@ export default async function DeudoresPage() {
       .eq('user_id', userId)
       .neq('status', 'archived')
       .order('created_at', { ascending: false }),
-    supabase.from('pillars').select('id, name, percentage').eq('user_id', userId),
+    supabase.from('pillars').select('id, name').eq('user_id', userId),
     supabase.from('categories').select('id, pillar_id, name, fixed_amount').eq('user_id', userId).is('deleted_at', null),
     supabase
       .from('shared_debts')
@@ -55,7 +57,7 @@ export default async function DeudoresPage() {
   if (activeSharedIds.length > 0) {
     const { data: myPendingPayments } = await supabase
       .from('shared_debt_payments')
-      .select('id, shared_debt_id, amount')
+      .select('id, shared_debt_id, amount, receipt_path')
       .in('shared_debt_id', activeSharedIds)
       .eq('status', 'pending')
     for (const p of myPendingPayments ?? []) {
@@ -63,6 +65,7 @@ export default async function DeudoresPage() {
         id: p.id,
         sharedDebtId: p.shared_debt_id,
         amount: p.amount,
+        hasReceipt: p.receipt_path !== null,
       })
     }
   }
@@ -70,6 +73,14 @@ export default async function DeudoresPage() {
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
       <PageReadySignal />
+      <section>
+        <h1 className="text-xl font-semibold tracking-tight">Deudores</h1>
+        <p className="mt-1 text-sm text-zinc-500">
+          Acá registrás a quién le prestaste plata. Un cobro se convierte en un ingreso extra, a
+          donde vos elijas.
+        </p>
+      </section>
+      <NewDebtorForm todayIso={todayIso} />
       <SharedDebtsSection
         role="creditor"
         currentUserId={userId}
@@ -82,7 +93,7 @@ export default async function DeudoresPage() {
         debtors={debtors ?? []}
         pillars={pillars ?? []}
         categories={categories ?? []}
-        todayIso={todayInBolivia().iso}
+        todayIso={todayIso}
       />
     </div>
   )

@@ -18,6 +18,7 @@ import {
   resolveDeficit,
   type DominoOutcome,
 } from './actions'
+import { registerFreeMoneyMovement } from './mi-dinero/libre/actions'
 import { formatBs } from '@/lib/format'
 
 type PillarName = 'ahorro' | 'gasto' | 'inversion'
@@ -29,6 +30,12 @@ const PILLAR_LABEL: Record<PillarName, string> = {
   gasto: 'Gasto',
   inversion: 'Inversión',
 }
+
+// Sentinel de UI (nunca se manda a registerTransaction): dinero libre no es
+// un pilar de verdad, no tiene id en la tabla pillars — un movimiento contra
+// esto va a free_money_transactions (ver ../mi-dinero/libre/actions.ts), no
+// a transactions.
+const FREE_MONEY_TARGET = 'libre' as const
 
 type ResolveChoice = 'future_days' | 'ahorro' | 'inversion' | 'debt'
 
@@ -45,8 +52,15 @@ export default function QuickAddForm({
     [pillars]
   )
 
+  // Ingreso extra NUNCA va a Gasto (Gasto solo registra gastos, nunca
+  // ingresos — mismo criterio que ya regía para el gasto cotidiano, ahora
+  // explícito acá también): el default es el primer pilar que no sea Gasto.
+  const nonGastoPillars = useMemo(() => pillars.filter((p) => p.name !== 'gasto'), [pillars])
+
   const [type, setType] = useState<'expense' | 'extra_income'>('expense')
-  const [pillarId, setPillarId] = useState(gastoPillar?.id ?? pillars[0]?.id ?? '')
+  // pillarId: id de un pilar real (nunca Gasto), o el sentinel FREE_MONEY_TARGET.
+  const [pillarId, setPillarId] = useState<string>(nonGastoPillars[0]?.id ?? '')
+  const [expenseTarget, setExpenseTarget] = useState<'gasto' | typeof FREE_MONEY_TARGET>('gasto')
   const [categoryId, setCategoryId] = useState('')
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
@@ -68,11 +82,15 @@ export default function QuickAddForm({
   const [resolved, setResolved] = useState(false)
   const [resolveError, setResolveError] = useState<string | null>(null)
 
-  const effectivePillarId = type === 'expense' ? gastoPillar?.id ?? '' : pillarId
+  // Dinero libre no es un pilar real (no tiene id en `pillars`, no tiene
+  // categorías, no participa del efecto dominó) — cuando el destino elegido
+  // es ese, el movimiento va por otro camino (ver handleSubmit).
+  const isFreeMoneyTarget = type === 'expense' ? expenseTarget === FREE_MONEY_TARGET : pillarId === FREE_MONEY_TARGET
+  const effectivePillarId = type === 'expense' ? gastoPillar?.id ?? '' : pillarId === FREE_MONEY_TARGET ? '' : pillarId
 
   const categoryOptions = useMemo(
-    () => categories.filter((c) => c.pillar_id === effectivePillarId),
-    [categories, effectivePillarId]
+    () => (isFreeMoneyTarget ? [] : categories.filter((c) => c.pillar_id === effectivePillarId)),
+    [categories, effectivePillarId, isFreeMoneyTarget]
   )
 
   const ahorroCategoryOptions = useMemo(
@@ -101,9 +119,21 @@ export default function QuickAddForm({
     setCategoryId('')
     setSuccess(false)
     resetDominoState()
-    if (next === 'extra_income' && !pillarId) {
-      setPillarId(pillars[0]?.id ?? '')
+    if (next === 'extra_income' && (!pillarId || pillarId === gastoPillar?.id)) {
+      setPillarId(nonGastoPillars[0]?.id ?? '')
     }
+  }
+
+  function handleExpenseTargetChange(next: 'gasto' | typeof FREE_MONEY_TARGET) {
+    setExpenseTarget(next)
+    setCategoryId('')
+    setSuccess(false)
+    resetDominoState()
+  }
+
+  function handlePillarChange(next: string) {
+    setPillarId(next)
+    setCategoryId('')
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -117,6 +147,28 @@ export default function QuickAddForm({
       setError('Ingresá un monto mayor a 0.')
       return
     }
+
+    // Dinero libre no es un pilar: no pasa por registerTransaction (ni por
+    // el efecto dominó, que solo aplica a pilares/categorías reales) — es un
+    // movimiento aparte que cae en el mismo historial que /mi-dinero/libre.
+    if (isFreeMoneyTarget) {
+      setSubmitting(true)
+      const res = await registerFreeMoneyMovement({
+        type: type === 'expense' ? 'gasto' : 'ingreso',
+        amount: amountNumber,
+        description: description.trim() || undefined,
+      })
+      setSubmitting(false)
+      if (res.error) {
+        setError(res.error)
+        return
+      }
+      setAmount('')
+      setDescription('')
+      setSuccess(true)
+      return
+    }
+
     if (!effectivePillarId) {
       setError('Elegí un pilar.')
       return
@@ -191,12 +243,28 @@ export default function QuickAddForm({
     setResolved(true)
   }
 
-  function handleUseExtraIncome() {
-    if (domino?.case !== 2) return
-    setType('extra_income')
-    setAmount(String(domino.deficitAmount))
-    resetDominoState()
-    setSuccess(false)
+  // "Ingreso extra que no registré" (Caso 2): la plata que cubrió el
+  // déficit SÍ entró a Gasto de verdad (por eso el hueco ya no está) — es la
+  // única situación donde un ingreso extra puede ir a Gasto, y por eso no
+  // pasa por el combo de pilar de arriba (que ya no ofrece Gasto): se
+  // registra directo, sin que el usuario tenga que elegir nada más.
+  async function handleUseExtraIncome() {
+    if (domino?.case !== 2 || !gastoPillar) return
+    setResolveError(null)
+    setResolving(true)
+    const res = await registerTransaction({
+      type: 'extra_income',
+      pillarId: gastoPillar.id,
+      categoryId: null,
+      amount: domino.deficitAmount,
+      description: 'Ingreso extra que no había registrado',
+    })
+    setResolving(false)
+    if (res?.error) {
+      setResolveError(res.error)
+      return
+    }
+    setResolved(true)
   }
 
   return (
@@ -210,7 +278,7 @@ export default function QuickAddForm({
           onClick={() => handleTypeChange('expense')}
           className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${
             type === 'expense'
-              ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+              ? 'bg-brand text-white dark:text-zinc-950'
               : 'border border-zinc-300 dark:border-zinc-700'
           }`}
         >
@@ -221,7 +289,7 @@ export default function QuickAddForm({
           onClick={() => handleTypeChange('extra_income')}
           className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${
             type === 'extra_income'
-              ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+              ? 'bg-brand text-white dark:text-zinc-950'
               : 'border border-zinc-300 dark:border-zinc-700'
           }`}
         >
@@ -243,9 +311,30 @@ export default function QuickAddForm({
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder="Ej. 50"
-            className="rounded-lg border border-zinc-300 px-3 py-2 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
+            className="rounded-lg border border-zinc-300 px-3 py-2 outline-none focus:border-brand dark:border-zinc-700 dark:focus:border-brand"
           />
         </div>
+
+        {type === 'expense' && (
+          <div className="flex flex-col gap-1">
+            <label htmlFor="qa-expense-target" className="text-sm font-medium">
+              Sale de
+            </label>
+            <select
+              id="qa-expense-target"
+              value={expenseTarget}
+              onChange={(e) => handleExpenseTargetChange(e.target.value as 'gasto' | typeof FREE_MONEY_TARGET)}
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 outline-none [color-scheme:light] focus:border-brand dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:[color-scheme:dark] dark:focus:border-brand"
+            >
+              <option value="gasto" className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
+                Gasto
+              </option>
+              <option value={FREE_MONEY_TARGET} className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
+                Dinero libre
+              </option>
+            </select>
+          </div>
+        )}
 
         {type === 'extra_income' && (
           <div className="flex flex-col gap-1">
@@ -255,18 +344,22 @@ export default function QuickAddForm({
             <select
               id="qa-pillar"
               value={pillarId}
-              onChange={(e) => {
-                setPillarId(e.target.value)
-                setCategoryId('')
-              }}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 outline-none [color-scheme:light] focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:[color-scheme:dark] dark:focus:border-zinc-100"
+              onChange={(e) => handlePillarChange(e.target.value)}
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 outline-none [color-scheme:light] focus:border-brand dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:[color-scheme:dark] dark:focus:border-brand"
             >
-              {pillars.map((p) => (
+              {nonGastoPillars.map((p) => (
                 <option key={p.id} value={p.id} className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
                   {PILLAR_LABEL[p.name]}
                 </option>
               ))}
+              <option value={FREE_MONEY_TARGET} className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
+                Dinero libre
+              </option>
             </select>
+            <p className="text-xs text-zinc-500">
+              Gasto no puede recibir ingresos — solo registra gastos. Si necesitás más presupuesto
+              para un gasto fijo puntual, configuralo directo en esa categoría, en Gastos fijos.
+            </p>
           </div>
         )}
 
@@ -279,7 +372,7 @@ export default function QuickAddForm({
               id="qa-category"
               value={categoryId}
               onChange={(e) => setCategoryId(e.target.value)}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 outline-none [color-scheme:light] focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:[color-scheme:dark] dark:focus:border-zinc-100"
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 outline-none [color-scheme:light] focus:border-brand dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:[color-scheme:dark] dark:focus:border-brand"
             >
               <option value="" className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
                 Sin categoría (va directo al pilar)
@@ -303,7 +396,7 @@ export default function QuickAddForm({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Ej. Almuerzo"
-            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
+            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-brand dark:border-zinc-700 dark:focus:border-brand"
           />
         </div>
       </div>
@@ -374,9 +467,11 @@ export default function QuickAddForm({
                     onChange={(e) => setResolveCategoryId(e.target.value)}
                     className="ml-6 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 outline-none [color-scheme:light] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:[color-scheme:dark]"
                   >
-                    <option value="">Elegí una subcategoría</option>
+                    <option value="" className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
+                      Elegí una subcategoría
+                    </option>
                     {ahorroCategoryOptions.map((c) => (
-                      <option key={c.id} value={c.id}>
+                      <option key={c.id} value={c.id} className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
                         {c.name}
                       </option>
                     ))}
@@ -398,9 +493,11 @@ export default function QuickAddForm({
                     onChange={(e) => setResolveCategoryId(e.target.value)}
                     className="ml-6 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 outline-none [color-scheme:light] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:[color-scheme:dark]"
                   >
-                    <option value="">Elegí una subcategoría</option>
+                    <option value="" className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
+                      Elegí una subcategoría
+                    </option>
                     {inversionCategoryOptions.map((c) => (
-                      <option key={c.id} value={c.id}>
+                      <option key={c.id} value={c.id} className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
                         {c.name}
                       </option>
                     ))}
@@ -441,9 +538,10 @@ export default function QuickAddForm({
                 <button
                   type="button"
                   onClick={handleUseExtraIncome}
-                  className="text-xs text-red-700 underline dark:text-red-400"
+                  disabled={resolving}
+                  className="text-xs text-red-700 underline disabled:opacity-50 dark:text-red-400"
                 >
-                  Ingreso extra que no registré
+                  {resolving ? 'Guardando…' : 'Ingreso extra que no registré'}
                 </button>
               </div>
             </>
@@ -454,7 +552,7 @@ export default function QuickAddForm({
       <button
         type="submit"
         disabled={submitting}
-        className="mt-4 w-full rounded-lg bg-zinc-900 py-2.5 font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+        className="mt-4 w-full rounded-lg bg-brand py-2.5 font-medium text-white transition-colors hover:bg-brand/90 disabled:opacity-50 dark:text-zinc-950"
       >
         {submitting ? 'Guardando…' : 'Registrar'}
       </button>

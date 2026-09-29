@@ -4,12 +4,24 @@
 
 export type PillarName = 'ahorro' | 'gasto' | 'inversion'
 
-export type PillarRow = { id: string; name: PillarName; percentage: number }
+export type PillarRow = { id: string; name: PillarName; monthly_amount: number }
 // date es opcional: computeDashboard no la usa, pero actions.ts la necesita
 // para separar "transacciones de antes de hoy" de "hasta hoy" (Caso 1).
-export type TransactionRow = { pillar_id: string; category_id: string | null; amount: number; date?: string }
-// Solo categorías CON fixed_amount asignado (gasto fijo, manual §4.2).
-export type CategoryFixedRow = { id: string; pillar_id: string; fixed_amount: number }
+// is_allocation es opcional (transacciones viejas no lo tienen): un depósito
+// del reparto mensual (ver lib/monthlyAllocation.server.ts) ya está contado
+// en `budget` más abajo, así que se excluye de "movimientos" para no sumarlo
+// dos veces. Un gasto fijo (categories.fixed_amount) NO tiene este mismo
+// trato: su transacción se genera sola, en su fecha (ver el bloque
+// "gastos fijos" en app/(app)/page.tsx), y de ahí en más es un movimiento
+// normal — no se reserva por adelantado (decisión del usuario: el
+// presupuesto disponible no baja hasta que de verdad toca esa cuota).
+export type TransactionRow = {
+  pillar_id: string
+  category_id: string | null
+  amount: number
+  date?: string
+  is_allocation?: boolean
+}
 
 const BOLIVIA_TZ = 'America/La_Paz'
 
@@ -74,13 +86,27 @@ export type DashboardData = {
   dailyBudget: number
   isDeficit: boolean
   daysRemaining: number
+  // Ingreso menos lo que suman los 3 pilares (migración 0020: pilares con
+  // monto fijo, no %) — plata sin destino específico. Nunca negativo: si el
+  // ingreso de un mes no alcanza para los montos ya configurados, queda en
+  // 0 (no se "fabrica" plata) y es al usuario a quien le toca ajustar sus
+  // montos, no algo que la app resuelva sola.
+  freeMoney: number
 }
 
 export function computeDashboard(input: {
   baseIncome: number
   pillars: PillarRow[]
   transactionsThisMonth: TransactionRow[]
-  fixedCategories: CategoryFixedRow[]
+  // Gastos fijos con "reservar desde ya" (categories.fixed_reserve_ahead,
+  // migración 0018): monto prorrateado de este mes por pilar (ver
+  // lib/fixedExpense.ts monthlyReserveAmount), calculado por quien llama a
+  // esto. Sus transacciones (cuando se generen) se excluyen de
+  // `movimientos` vía reservedCategoryIds, para no restarlas dos veces. Los
+  // gastos fijos SIN "reservar desde ya" no pasan por acá: su transacción,
+  // una vez generada en su fecha real, es un movimiento normal más.
+  fixedReserveByPillarId?: Record<string, number>
+  reservedCategoryIds?: string[]
   // Efecto dominó (manual §4.3): ajuste CON SIGNO por pilar, ya neto de todo
   // lo declarado este mes. Positivo = un pilar (Ahorro/Inversión) quedó
   // debitado por haber cubierto un déficit de Gasto. Negativo = a Gasto se
@@ -96,25 +122,34 @@ export function computeDashboard(input: {
 }): DashboardData {
   const today = input.today ?? todayInBolivia()
   const daysRemaining = daysInMonth(today.year, today.month) - today.day + 1
+  const reservedCategoryIds = new Set(input.reservedCategoryIds ?? [])
 
-  const fixedCategoryIds = new Set(input.fixedCategories.map((c) => c.id))
+  // Migración 0020: al configurar los montos en Mi Dinero ya se valida que
+  // no sumen más que el ingreso base — pero el ingreso CONFIRMADO de un mes
+  // puntual puede bajar por debajo de esos montos ya guardados (el usuario
+  // no está obligado a re-ajustar sus pilares cada vez que gana menos). Acá
+  // nunca se "fabrica" plata: si los 3 montos no entran en el ingreso de
+  // este mes, se escalan los 3 proporcionalmente (mismo criterio que ya usa
+  // computeMonthlyAllocation cuando las categorías de un pilar se pasan de
+  // su presupuesto) — la configuración de Mi Dinero no se toca, solo se
+  // ajusta el cálculo de este mes puntual.
+  const committedTotal = input.pillars.reduce((sum, p) => sum + p.monthly_amount, 0)
+  const scaleFactor = committedTotal > input.baseIncome && committedTotal > 0 ? input.baseIncome / committedTotal : 1
 
   const pillarSummaries: PillarSummary[] = input.pillars.map((pillar) => {
     // Deudas v2 (manual §6): todo pago de deuda sale de un pilar/categoría
     // específico (transactions.debt_id), ya cubierto por `movimientos` más
     // abajo — no hay más una deducción "de ingreso total antes de repartir".
-    const budget = (input.baseIncome * pillar.percentage) / 100
+    //
+    // Migración 0020: el presupuesto del pilar es un monto fijo que el
+    // usuario decidió en Mi Dinero, no un % del ingreso — no se recalcula
+    // solo si el ingreso cambia (salvo el escalado de shortfall de arriba).
+    const budget = pillar.monthly_amount * scaleFactor
 
-    // Gastos fijos: plata comprometida por CONFIGURACIÓN (manual §4.2/§5.2,
-    // "Crítico"), no por si ya existe la transacción del pago. Se resta acá
-    // siempre, y sus transacciones (si existen) se excluyen de "movimientos"
-    // para no descontarlas dos veces.
-    const fixedTotal = input.fixedCategories
-      .filter((c) => c.pillar_id === pillar.id)
-      .reduce((sum, c) => sum + c.fixed_amount, 0)
+    const fixedReserve = input.fixedReserveByPillarId?.[pillar.id] ?? 0
 
     const movimientos = input.transactionsThisMonth
-      .filter((t) => t.pillar_id === pillar.id && !fixedCategoryIds.has(t.category_id ?? ''))
+      .filter((t) => t.pillar_id === pillar.id && !t.is_allocation && !reservedCategoryIds.has(t.category_id ?? ''))
       .reduce((sum, t) => sum + t.amount, 0)
 
     const dominoAdjustment = input.dominoPillarAdjustments?.[pillar.id] ?? 0
@@ -125,17 +160,21 @@ export function computeDashboard(input: {
       pillar: pillar.name,
       budget,
       carriedOver,
-      saldo: budget + carriedOver - fixedTotal + movimientos - dominoAdjustment,
+      saldo: budget + carriedOver - fixedReserve + movimientos - dominoAdjustment,
     }
   })
 
   const saldoGasto = pillarSummaries.find((p) => p.pillar === 'gasto')?.saldo ?? 0
   const dailyBudget = daysRemaining > 0 ? Math.max(0, saldoGasto / daysRemaining) : 0
 
+  const committed = input.pillars.reduce((sum, p) => sum + p.monthly_amount, 0)
+  const freeMoney = Math.max(0, input.baseIncome - committed)
+
   return {
     pillars: pillarSummaries,
     dailyBudget,
     isDeficit: saldoGasto <= 0,
     daysRemaining,
+    freeMoney,
   }
 }

@@ -8,16 +8,28 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* Colores de marca (logo: aro turquesa + acento violeta en el borde de la
+     moneda). Tonos "600" en claro para que el texto tenga contraste sobre
+     blanco; en .dark se aclaran a "400" para que brillen como en el logo
+     sobre fondo negro. Son acentos de la interfaz (botones, foco, detalles),
+     nunca el color de identidad de un pilar — eso lo define
+     lib/pillarColors.ts y no se toca acá. */
+  --brand: #0d9488;
+  --brand-violet: #7c3aed;
 }
 
 .dark {
   --background: #0a0a0a;
   --foreground: #ededed;
+  --brand: #2dd4bf;
+  --brand-violet: #a78bfa;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-brand: var(--brand);
+  --color-brand-violet: var(--brand-violet);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -71,5 +83,47 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .coin-wink {
     animation: none;
+  }
+}
+
+/* Moneda cayendo en la ranura del chanchito — pantalla de registro (ver
+   app/registro/PiggyBankAnimation.tsx). Posición de la ranura verificada
+   a ojo con capturas contra public/animacionlogin.png (arriba a la
+   izquierda del lomo, junto a la oreja). Cae, gira, y se "mete"
+   achicándose justo al llegar — después una pausa antes de repetir. */
+@keyframes piggy-coin-drop {
+  0% {
+    top: -15%;
+    transform: translateX(-50%) scale(1) rotate(0deg);
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  46% {
+    top: 15%;
+    transform: translateX(-50%) scale(1) rotate(200deg);
+    opacity: 1;
+  }
+  56% {
+    top: 17%;
+    transform: translateX(-50%) scale(0.3) rotate(240deg);
+    opacity: 0;
+  }
+  100% {
+    top: 17%;
+    transform: translateX(-50%) scale(0.3) rotate(240deg);
+    opacity: 0;
+  }
+}
+
+.piggy-coin {
+  animation: piggy-coin-drop 3.2s cubic-bezier(0.55, 0, 0.85, 0.4) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .piggy-coin {
+    animation: none;
+    opacity: 0;
   }
 }

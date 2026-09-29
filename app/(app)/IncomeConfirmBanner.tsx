@@ -4,6 +4,12 @@
 // (manual §3.1): "el sistema solicita ingresarlo manualmente al inicio de
 // cada mes". No bloquea nada — el usuario puede seguir usando la app con
 // el último ingreso guardado mientras no confirma.
+//
+// Desde la migración 0020 (pilares con monto fijo, no % del ingreso) esto
+// es un solo paso: confirmar el monto. Ya no hay una pantalla de "revisar
+// cómo se reparte" — los montos de pilares/categorías son fijos, no
+// dependen de cuánto ingreso se confirme cada mes (ver
+// lib/monthlyAllocation.server.ts).
 
 import { useState } from 'react'
 import { updateProfile } from './mas/actions'
@@ -15,9 +21,15 @@ export default function IncomeConfirmBanner({ name, baseIncome }: { name: string
   const [confirmed, setConfirmed] = useState(false)
 
   async function handleConfirm() {
+    const baseIncomeNumber = Number(amount) || 0
+    if (!(baseIncomeNumber > 0)) {
+      setError('Ingresá un monto mayor a 0.')
+      return
+    }
+
     setSaving(true)
     setError(null)
-    const res = await updateProfile({ name, baseIncome: Number(amount), autoRepeatIncome: false })
+    const res = await updateProfile({ name, baseIncome: baseIncomeNumber, autoRepeatIncome: false })
     setSaving(false)
     if (res.error) {
       setError(res.error)

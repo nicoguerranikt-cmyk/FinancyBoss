@@ -13,11 +13,11 @@ const PILLAR_LABEL: Record<PillarName, string> = {
   inversion: 'Inversión',
 }
 
-export type PillarRow = { id: string; name: PillarName; percentage: number }
+export type PillarRow = { id: string; name: PillarName }
 export type CategoryRow = { id: string; pillar_id: string; name: string; fixed_amount: number | null }
 
 const inputClass =
-  'rounded-lg border border-zinc-300 px-3 py-1.5 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100'
+  'rounded-lg border border-zinc-300 px-3 py-1.5 text-sm outline-none focus:border-brand dark:border-zinc-700 dark:focus:border-brand'
 
 export default function PillarCategoryFields({
   pillars,
@@ -46,9 +46,11 @@ export default function PillarCategoryFields({
         }}
         className={`${inputClass} [color-scheme:light] dark:[color-scheme:dark]`}
       >
-        <option value="">Elegí un pilar</option>
+        <option value="" className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
+          Elegí un pilar
+        </option>
         {pillars.map((p) => (
-          <option key={p.id} value={p.id}>
+          <option key={p.id} value={p.id} className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
             {PILLAR_LABEL[p.name]}
           </option>
         ))}
@@ -59,9 +61,11 @@ export default function PillarCategoryFields({
           onChange={(e) => setCategoryId(e.target.value)}
           className={`${inputClass} [color-scheme:light] dark:[color-scheme:dark]`}
         >
-          <option value="">Sin categoría (va directo al pilar)</option>
+          <option value="" className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
+            Sin categoría (va directo al pilar)
+          </option>
           {categoryOptions.map((c) => (
-            <option key={c.id} value={c.id}>
+            <option key={c.id} value={c.id} className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
               {c.name}
             </option>
           ))}

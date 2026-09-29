@@ -29,7 +29,7 @@ export default function NavBar() {
                 href={tab.href}
                 className={`flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium transition-colors ${
                   active
-                    ? 'text-zinc-900 dark:text-zinc-100'
+                    ? 'text-brand'
                     : 'text-zinc-400 hover:text-zinc-600 dark:text-zinc-600 dark:hover:text-zinc-400'
                 }`}
               >

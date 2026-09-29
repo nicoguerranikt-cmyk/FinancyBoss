@@ -13,11 +13,12 @@ import {
   acceptSharedDebtInvite,
   archiveSharedDebt,
   confirmSharedPayment,
-  createSharedDebtInvite,
-  findUserByEmail,
+  getCreditorPaymentQrUrl,
+  getPaymentReceiptUrl,
   proposeSharedPayment,
   rejectSharedDebtInvite,
   rejectSharedPayment,
+  uploadPaymentReceipt,
 } from './actions'
 
 export type SharedDebtRow = {
@@ -30,15 +31,15 @@ export type SharedDebtRow = {
   created_by: string
   counterpartName: string
 }
-export type PendingSharedPayment = { id: string; sharedDebtId: string; amount: number }
+export type PendingSharedPayment = { id: string; sharedDebtId: string; amount: number; hasReceipt: boolean }
 export type RejectedSharedPayment = { id: string; sharedDebtId: string; amount: number; note: string | null }
 
 const inputClass =
-  'rounded-lg border border-zinc-300 px-3 py-1.5 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100'
+  'rounded-lg border border-zinc-300 px-3 py-1.5 text-sm outline-none focus:border-brand dark:border-zinc-700 dark:focus:border-brand'
 const secondaryButtonClass =
   'rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:hover:bg-zinc-800'
 const primaryButtonClass =
-  'rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'
+  'rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand/90 disabled:opacity-40 dark:text-zinc-950'
 
 export default function SharedDebtsSection({
   role,
@@ -46,6 +47,7 @@ export default function SharedDebtsSection({
   debts,
   pendingPaymentsByDebtId,
   rejectedPaymentsByDebtId = {},
+  pendingAutoPayIds = [],
   pillars,
   categories,
 }: {
@@ -54,9 +56,13 @@ export default function SharedDebtsSection({
   debts: SharedDebtRow[]
   pendingPaymentsByDebtId: Record<string, PendingSharedPayment[]>
   rejectedPaymentsByDebtId?: Record<string, RejectedSharedPayment[]>
+  // Recordatorio de pago programado (rol deudor únicamente, ver
+  // LinkedDebtInviteForm) — solo avisa, nunca propone nada solo.
+  pendingAutoPayIds?: string[]
   pillars: PillarRow[]
   categories: CategoryRow[]
 }) {
+  const pendingAutoPaySet = new Set(pendingAutoPayIds)
   const gastoPillarId = pillars.find((p) => p.name === 'gasto')?.id ?? ''
 
   // ---------- Aceptar / rechazar invitación ----------
@@ -78,15 +84,29 @@ export default function SharedDebtsSection({
   const [proposeAmount, setProposeAmount] = useState('')
   const [proposePillarId, setProposePillarId] = useState('')
   const [proposeCategoryId, setProposeCategoryId] = useState('')
+  const [proposeReceiptFile, setProposeReceiptFile] = useState<File | null>(null)
   const [proposeSaving, setProposeSaving] = useState(false)
   const [proposeError, setProposeError] = useState<string | null>(null)
+
+  // QR del acreedor: se pide bajo demanda (no en cada carga de la lista) —
+  // solo cuando el deudor abre "Proponer pago" para esa deuda puntual.
+  const [qrByDebtId, setQrByDebtId] = useState<Record<string, string | null>>({})
+  const [qrLoadingId, setQrLoadingId] = useState<string | null>(null)
 
   function openPropose(id: string) {
     setProposeOpenId(id)
     setProposeAmount('')
     setProposePillarId(gastoPillarId)
     setProposeCategoryId('')
+    setProposeReceiptFile(null)
     setProposeError(null)
+    if (qrByDebtId[id] === undefined) {
+      setQrLoadingId(id)
+      getCreditorPaymentQrUrl({ sharedDebtId: id }).then((res) => {
+        setQrLoadingId(null)
+        setQrByDebtId((prev) => ({ ...prev, [id]: 'error' in res ? null : res.qrUrl }))
+      })
+    }
   }
 
   async function handlePropose(sharedDebtId: string) {
@@ -102,9 +122,27 @@ export default function SharedDebtsSection({
       pillarId: proposePillarId,
       categoryId: proposeCategoryId || null,
     })
+    if (res.error) {
+      setProposeSaving(false)
+      setProposeError(res.error)
+      return
+    }
+    // El comprobante es opcional: si el pago se propuso bien pero subir la
+    // imagen falla, no queremos que parezca que todo falló — el pago ya
+    // está propuesto, solo avisamos que la imagen no se pudo adjuntar.
+    if (proposeReceiptFile && res.paymentId) {
+      const formData = new FormData()
+      formData.append('paymentId', res.paymentId)
+      formData.append('file', proposeReceiptFile)
+      const receiptRes = await uploadPaymentReceipt(formData)
+      if (receiptRes.error) {
+        setProposeSaving(false)
+        setProposeError(`Pago propuesto, pero no pudimos subir el comprobante: ${receiptRes.error}`)
+        return
+      }
+    }
     setProposeSaving(false)
-    if (res.error) setProposeError(res.error)
-    else setProposeOpenId(null)
+    setProposeOpenId(null)
   }
 
   // ---------- Confirmar / rechazar pago (rol acreedor) ----------
@@ -151,62 +189,23 @@ export default function SharedDebtsSection({
     setRejectOpenId(null)
   }
 
+  // ---------- Ver comprobante (rol acreedor) — bajo demanda ----------
+  const [receiptByPaymentId, setReceiptByPaymentId] = useState<Record<string, string | null>>({})
+  const [receiptLoadingId, setReceiptLoadingId] = useState<string | null>(null)
+
+  async function handleViewReceipt(paymentId: string) {
+    setReceiptLoadingId(paymentId)
+    const res = await getPaymentReceiptUrl({ paymentId })
+    setReceiptLoadingId(null)
+    setReceiptByPaymentId((prev) => ({ ...prev, [paymentId]: 'error' in res ? null : res.receiptUrl }))
+  }
+
   // ---------- Archivar ----------
   const [archiveSaving, setArchiveSaving] = useState<Record<string, boolean>>({})
   async function handleArchive(id: string) {
     setArchiveSaving((prev) => ({ ...prev, [id]: true }))
     await archiveSharedDebt({ sharedDebtId: id })
     setArchiveSaving((prev) => ({ ...prev, [id]: false }))
-  }
-
-  // ---------- Nueva invitación ----------
-  const [email, setEmail] = useState('')
-  const [lookupResult, setLookupResult] = useState<{ userId: string; name: string } | null>(null)
-  const [lookupSaving, setLookupSaving] = useState(false)
-  const [lookupError, setLookupError] = useState<string | null>(null)
-  const [newName, setNewName] = useState('')
-  const [newDescription, setNewDescription] = useState('')
-  const [newTotal, setNewTotal] = useState('')
-  const [creating, setCreating] = useState(false)
-  const [createError, setCreateError] = useState<string | null>(null)
-
-  async function handleLookup() {
-    setLookupSaving(true)
-    setLookupError(null)
-    setLookupResult(null)
-    const res = await findUserByEmail(email)
-    setLookupSaving(false)
-    if ('error' in res) setLookupError(res.error)
-    else setLookupResult(res)
-  }
-
-  async function handleCreateInvite() {
-    if (!lookupResult) return
-    const name = newName.trim()
-    const totalAmount = Number(newTotal)
-    if (!name) return setCreateError('Ingresá un nombre para esta deuda.')
-    if (!(totalAmount > 0)) return setCreateError('El monto debe ser mayor a 0.')
-
-    setCreating(true)
-    setCreateError(null)
-    const res = await createSharedDebtInvite({
-      direction: role === 'debtor' ? 'yo_debo' : 'me_deben',
-      counterpartUserId: lookupResult.userId,
-      counterpartName: lookupResult.name,
-      name,
-      description: newDescription || null,
-      totalAmount,
-    })
-    setCreating(false)
-    if (res.error) {
-      setCreateError(res.error)
-    } else {
-      setEmail('')
-      setLookupResult(null)
-      setNewName('')
-      setNewDescription('')
-      setNewTotal('')
-    }
   }
 
   const visible = debts.filter((d) => d.status !== 'rejected' && d.status !== 'archived')
@@ -274,7 +273,7 @@ export default function SharedDebtsSection({
                   </p>
                   <div className="mt-2 h-1.5 w-full rounded-full bg-zinc-100 dark:bg-zinc-800">
                     <div
-                      className="h-1.5 rounded-full bg-zinc-900 dark:bg-zinc-100"
+                      className="h-1.5 rounded-full bg-brand"
                       style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
                     />
                   </div>
@@ -286,6 +285,28 @@ export default function SharedDebtsSection({
                         className="mt-3 flex flex-col gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
                       >
                         <span>{debt.counterpartName} dice que te pagó {formatBs(payment.amount)} Bs.</span>
+                        {payment.hasReceipt && (
+                          <div>
+                            {receiptByPaymentId[payment.id] === undefined ? (
+                              <button
+                                onClick={() => handleViewReceipt(payment.id)}
+                                disabled={receiptLoadingId === payment.id}
+                                className="text-xs font-medium underline"
+                              >
+                                {receiptLoadingId === payment.id ? 'Cargando…' : 'Ver comprobante'}
+                              </button>
+                            ) : receiptByPaymentId[payment.id] ? (
+                              // eslint-disable-next-line @next/next/no-img-element -- signed URL temporal, no un asset local
+                              <img
+                                src={receiptByPaymentId[payment.id] as string}
+                                alt="Comprobante de pago"
+                                className="max-h-48 rounded-lg border border-amber-200 dark:border-amber-900"
+                              />
+                            ) : (
+                              <span className="text-xs">No pudimos cargar el comprobante.</span>
+                            )}
+                          </div>
+                        )}
                         {confirmOpenId === payment.id ? (
                           <div className="flex flex-col gap-2">
                             <span>¿A qué pilar/categoría entra esa plata?</span>
@@ -366,10 +387,39 @@ export default function SharedDebtsSection({
                       </div>
                     ))}
 
+                  {role === 'debtor' && !isPaid && pendingAutoPaySet.has(debt.id) && proposeOpenId !== debt.id && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+                      <span>Te toca proponer un pago de &quot;{debt.name}&quot;.</span>
+                      <button
+                        onClick={() => openPropose(debt.id)}
+                        className="rounded-lg bg-amber-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-amber-800"
+                      >
+                        Proponer pago
+                      </button>
+                    </div>
+                  )}
+
                   {role === 'debtor' && !isPaid && (
                     <>
                       {proposeOpenId === debt.id ? (
                         <div className="mt-3 flex flex-col gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+                          {qrLoadingId === debt.id ? (
+                            <p className="text-xs text-zinc-500">Buscando el QR de {debt.counterpartName}…</p>
+                          ) : qrByDebtId[debt.id] ? (
+                            <div className="flex flex-col items-start gap-1">
+                              <p className="text-xs text-zinc-500">QR para pagarle a {debt.counterpartName}:</p>
+                              {/* eslint-disable-next-line @next/next/no-img-element -- signed URL temporal, no un asset local */}
+                              <img
+                                src={qrByDebtId[debt.id] as string}
+                                alt={`QR de cobro de ${debt.counterpartName}`}
+                                className="h-40 w-40 rounded-lg border border-zinc-200 object-contain dark:border-zinc-800"
+                              />
+                            </div>
+                          ) : (
+                            <p className="text-xs text-zinc-500">
+                              {debt.counterpartName} todavía no subió un QR de cobro.
+                            </p>
+                          )}
                           <input
                             type="number"
                             onWheel={(e) => e.currentTarget.blur()}
@@ -387,6 +437,29 @@ export default function SharedDebtsSection({
                             categoryId={proposeCategoryId}
                             setCategoryId={setProposeCategoryId}
                           />
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs text-zinc-500">Comprobante (opcional)</label>
+                            <label className="flex cursor-pointer items-center gap-2 rounded-lg border-2 border-dashed border-zinc-300 px-3 py-2 text-sm transition-colors hover:border-brand hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900">
+                              <svg
+                                className="h-4 w-4 shrink-0 text-zinc-400"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                                strokeWidth={1.5}
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v12m0-12 4 4m-4-4-4 4M4 18h16" />
+                              </svg>
+                              <span className="truncate text-zinc-500">
+                                {proposeReceiptFile ? proposeReceiptFile.name : 'Subí una foto del comprobante'}
+                              </span>
+                              <input
+                                type="file"
+                                accept="image/png,image/jpeg,image/webp"
+                                onChange={(e) => setProposeReceiptFile(e.target.files?.[0] ?? null)}
+                                className="hidden"
+                              />
+                            </label>
+                          </div>
                           {proposeError && (
                             <p className="text-sm text-red-600" role="alert">
                               {proposeError}
@@ -431,70 +504,6 @@ export default function SharedDebtsSection({
             </div>
           )
         })}
-      </div>
-
-      <div className="mt-4 flex flex-col gap-2 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
-        <h3 className="text-sm font-medium">
-          + Vincular {role === 'debtor' ? 'una deuda' : 'un deudor'} a otro usuario
-        </h3>
-        <div className="flex gap-2">
-          <input
-            type="email"
-            placeholder="Email de la otra persona"
-            value={email}
-            onChange={(e) => {
-              setEmail(e.target.value)
-              setLookupResult(null)
-            }}
-            className={`${inputClass} flex-1`}
-          />
-          <button onClick={handleLookup} disabled={lookupSaving} className={secondaryButtonClass}>
-            {lookupSaving ? 'Buscando…' : 'Buscar'}
-          </button>
-        </div>
-        {lookupError && (
-          <p className="text-sm text-red-600" role="alert">
-            {lookupError}
-          </p>
-        )}
-        {lookupResult && (
-          <div className="flex flex-col gap-2 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-900">
-            <p className="text-sm">
-              Encontramos a <span className="font-medium">{lookupResult.name}</span>. Completá los datos:
-            </p>
-            <input
-              type="text"
-              placeholder="Nombre de la deuda (ej. Préstamo para el viaje)"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              className={inputClass}
-            />
-            <input
-              type="text"
-              placeholder="Descripción (opcional)"
-              value={newDescription}
-              onChange={(e) => setNewDescription(e.target.value)}
-              className={inputClass}
-            />
-            <input
-              type="number"
-              onWheel={(e) => e.currentTarget.blur()}
-              min={0}
-              placeholder="Monto total (Bs)"
-              value={newTotal}
-              onChange={(e) => setNewTotal(e.target.value)}
-              className={inputClass}
-            />
-            {createError && (
-              <p className="text-sm text-red-600" role="alert">
-                {createError}
-              </p>
-            )}
-            <button onClick={handleCreateInvite} disabled={creating} className={primaryButtonClass}>
-              {creating ? 'Enviando…' : 'Enviar invitación'}
-            </button>
-          </div>
-        )}
       </div>
     </section>
   )

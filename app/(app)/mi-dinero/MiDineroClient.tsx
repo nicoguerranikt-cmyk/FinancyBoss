@@ -1,13 +1,16 @@
 'use client'
 
-// Mi Dinero (manual.md v2.0, sección 2): edición de % de los 3 pilares. Es un
-// ajuste conjunto (tienen que sumar exactamente 100, §2.1), por eso vive acá
-// en la pantalla general y no dentro de cada pilar por separado. Las
-// categorías de cada pilar viven un nivel más adentro (/mi-dinero/[pillarId]).
+// Mi Dinero (migración 0020): edición del monto fijo (Bs) de los 3 pilares
+// — ya no es un %. Es un ajuste conjunto (no pueden sumar más que el
+// ingreso, "no se puede fabricar plata de la nada"), por eso vive acá en la
+// pantalla general y no dentro de cada pilar por separado. Las categorías
+// de cada pilar viven un nivel más adentro (/mi-dinero/[pillarId]).
 
 import { useState } from 'react'
 import type { PillarName } from '@/lib/dashboard'
-import { updatePillarPercentages } from './actions'
+import { formatBs } from '@/lib/format'
+import { PILLAR_COLOR, PILLAR_TINT, PILLAR_BORDER } from '@/lib/pillarColors'
+import { updatePillarAmounts } from './actions'
 
 const PILLAR_LABEL: Record<PillarName, string> = {
   ahorro: 'Ahorro',
@@ -15,10 +18,10 @@ const PILLAR_LABEL: Record<PillarName, string> = {
   inversion: 'Inversión',
 }
 
-type PillarRow = { id: string; name: PillarName; percentage: number }
+type PillarRow = { id: string; name: PillarName; monthly_amount: number }
 
 const primaryButtonClass =
-  'rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'
+  'rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand/90 disabled:opacity-40 dark:text-zinc-950'
 
 function sumBarClass(valid: boolean) {
   return `rounded-lg px-3 py-2 text-sm ${
@@ -28,29 +31,34 @@ function sumBarClass(valid: boolean) {
   }`
 }
 
-export default function MiDineroClient({ pillars }: { pillars: PillarRow[] }) {
-  const [pct, setPct] = useState<Record<PillarName, number>>(() => {
-    const init: Record<PillarName, number> = { ahorro: 0, gasto: 0, inversion: 0 }
-    for (const p of pillars) init[p.name] = p.percentage
+export default function MiDineroClient({ pillars, baseIncome }: { pillars: PillarRow[]; baseIncome: number }) {
+  const [amounts, setAmounts] = useState<Record<PillarName, string>>(() => {
+    const init: Record<PillarName, string> = { ahorro: '0', gasto: '0', inversion: '0' }
+    for (const p of pillars) init[p.name] = String(p.monthly_amount)
     return init
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
-  const pctSum = pct.ahorro + pct.gasto + pct.inversion
-  const pctSumValid = Math.round(pctSum) === 100
+  const total = (Number(amounts.ahorro) || 0) + (Number(amounts.gasto) || 0) + (Number(amounts.inversion) || 0)
+  const freeMoney = Math.max(0, baseIncome - total)
+  const totalValid = total <= baseIncome
 
-  function setPillarPct(key: PillarName, value: string) {
-    const n = Math.max(0, Math.min(100, Math.round(Number(value) || 0)))
-    setPct((prev) => ({ ...prev, [key]: n }))
+  function setPillarAmount(key: PillarName, value: string) {
+    const n = Math.max(0, Number(value) || 0)
+    setAmounts((prev) => ({ ...prev, [key]: String(n) }))
     setSaved(false)
   }
 
   async function handleSave() {
     setError(null)
     setSaving(true)
-    const res = await updatePillarPercentages(pct)
+    const res = await updatePillarAmounts({
+      ahorro: Number(amounts.ahorro) || 0,
+      gasto: Number(amounts.gasto) || 0,
+      inversion: Number(amounts.inversion) || 0,
+    })
     setSaving(false)
     if (res.error) {
       setError(res.error)
@@ -62,31 +70,43 @@ export default function MiDineroClient({ pillars }: { pillars: PillarRow[] }) {
   return (
     <section>
       <h2 className="text-lg font-semibold tracking-tight">Distribución de pilares</h2>
-      <p className="mt-1 text-sm text-zinc-500">Tienen que sumar 100%.</p>
+      <p className="mt-1 text-sm text-zinc-500">
+        Elegí cuánto destinás a cada uno (en Bs). Lo que sobre queda como dinero libre.
+      </p>
 
-      <div className="mt-4 flex flex-col gap-4">
+      <div className="mt-4 grid grid-cols-3 gap-3">
         {pillars.map((pillar) => (
-          <div key={pillar.id} className="flex items-center gap-3">
-            <label htmlFor={`pct-${pillar.name}`} className="w-24 text-sm font-medium">
+          <div
+            key={pillar.id}
+            className={`rounded-xl border-t-4 p-3 ${PILLAR_BORDER[pillar.name]} ${PILLAR_TINT[pillar.name]}`}
+          >
+            <label
+              htmlFor={`amount-${pillar.name}`}
+              className="flex items-center justify-center gap-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300"
+            >
+              <span className={`h-2 w-2 rounded-full ${PILLAR_COLOR[pillar.name]}`} />
               {PILLAR_LABEL[pillar.name]}
             </label>
-            <input
-              id={`pct-${pillar.name}`}
-              type="number"
-              onWheel={(e) => e.currentTarget.blur()}
-              min={0}
-              max={100}
-              value={pct[pillar.name]}
-              onChange={(e) => setPillarPct(pillar.name, e.target.value)}
-              className="w-20 rounded-lg border border-zinc-300 px-2 py-1.5 text-right outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
-            />
-            <span className="text-sm text-zinc-500">%</span>
+            <div className="mt-2 flex items-center justify-center gap-1">
+              <input
+                id={`amount-${pillar.name}`}
+                type="number"
+                onWheel={(e) => e.currentTarget.blur()}
+                min={0}
+                value={amounts[pillar.name]}
+                onChange={(e) => setPillarAmount(pillar.name, e.target.value)}
+                className="w-16 min-w-0 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-right text-sm outline-none focus:border-brand dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-brand"
+              />
+              <span className="text-xs text-zinc-500">Bs</span>
+            </div>
           </div>
         ))}
       </div>
 
-      <div className={`mt-4 ${sumBarClass(pctSumValid)}`}>
-        {pctSumValid ? 'Perfecto, suman 100%.' : `Suman ${pctSum}%. Ajustá para llegar a 100%.`}
+      <div className={`mt-4 ${sumBarClass(totalValid)}`}>
+        {totalValid
+          ? `Te quedan ${formatBs(freeMoney)} Bs libres de tu ingreso (${formatBs(baseIncome)} Bs).`
+          : `Estos montos suman ${formatBs(total)} Bs, más que tu ingreso (${formatBs(baseIncome)} Bs).`}
       </div>
 
       {error && (
@@ -98,8 +118,8 @@ export default function MiDineroClient({ pillars }: { pillars: PillarRow[] }) {
         <p className="mt-3 text-sm text-green-700 dark:text-green-400">Cambios guardados.</p>
       )}
 
-      <button onClick={handleSave} disabled={!pctSumValid || saving} className={`mt-4 ${primaryButtonClass}`}>
-        {saving ? 'Guardando…' : 'Guardar porcentajes'}
+      <button onClick={handleSave} disabled={!totalValid || saving} className={`mt-4 ${primaryButtonClass}`}>
+        {saving ? 'Guardando…' : 'Guardar montos'}
       </button>
     </section>
   )

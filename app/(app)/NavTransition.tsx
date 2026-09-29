@@ -27,7 +27,7 @@
 //     nunca llega a avisarlo.
 
 import Image from 'next/image'
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 
 type Phase = 'hidden' | 'enter' | 'hold' | 'exit'
 
@@ -52,14 +52,26 @@ export default function NavTransitionProvider({ children }: { children: React.Re
   const [phase, setPhase] = useState<Phase>('hidden')
   const readyRef = useRef(false)
 
-  function beginNavigation() {
+  // useCallback (+ useMemo en el value de abajo) es obligatorio acá, no una
+  // prolijidad: sin esto, beginNavigation/reportReady son funciones nuevas
+  // en cada render de este Provider. El PageReadySignal de la pantalla
+  // VIEJA sigue montado justo cuando se hace click (todavía no navegó), y
+  // su useEffect depende de reportReady — si la referencia cambia, ese
+  // efecto se vuelve a disparar EN LA PANTALLA VIEJA, llamando a
+  // reportReady() nuevamente y poniendo readyRef en true casi al toque de
+  // que beginNavigation() lo había puesto en false. Eso hacía que la
+  // animación se diera por "lista" enseguida y se ocultara por temporizador
+  // mientras la pantalla nueva todavía estaba cargando — se veía la vieja
+  // unos segundos hasta que la navegación real terminaba y recién ahí
+  // cambiaba, sin nada tapando ese salto.
+  const beginNavigation = useCallback(() => {
     readyRef.current = false
     setPhase('enter')
-  }
+  }, [])
 
-  function reportReady() {
+  const reportReady = useCallback(() => {
     readyRef.current = true
-  }
+  }, [])
 
   // Entrar (izquierda -> medio).
   useEffect(() => {
@@ -90,8 +102,10 @@ export default function NavTransitionProvider({ children }: { children: React.Re
     return () => clearTimeout(t)
   }, [phase])
 
+  const contextValue = useMemo(() => ({ beginNavigation, reportReady }), [beginNavigation, reportReady])
+
   return (
-    <NavTransitionContext.Provider value={{ beginNavigation, reportReady }}>
+    <NavTransitionContext.Provider value={contextValue}>
       {children}
       {phase !== 'hidden' && (
         <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden bg-white/95 backdrop-blur dark:bg-zinc-950/95">

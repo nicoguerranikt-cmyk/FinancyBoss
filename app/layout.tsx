@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -41,7 +42,13 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        {/* next/script con "beforeInteractive": un <script> suelto acá
+            genera el warning "Encountered a script tag while rendering
+            React component" en React 19 / Next 16 — este es el mecanismo
+            soportado para inyectar un script que corre antes de hidratar. */}
+        <Script id="theme-init" strategy="beforeInteractive">
+          {themeInitScript}
+        </Script>
       </head>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>

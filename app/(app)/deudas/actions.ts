@@ -2,22 +2,29 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { monthRangeInBolivia, todayInBolivia } from '@/lib/dashboard'
-import { applyDebtPayment, isAutoPayDue } from '@/lib/debts'
+import { todayInBolivia } from '@/lib/dashboard'
+import {
+  applyDebtPayment,
+  lastDueOccurrence,
+  validateAutoPayFrequency,
+  type AutoPayInterval,
+} from '@/lib/debts'
 import { EPSILON } from '@/lib/domino'
 import { validatePillarSource } from '@/lib/pillarSource'
+
+export type AutoPayInput = {
+  amount: number
+  startDate: string // 'YYYY-MM-DD'
+  intervalUnit: AutoPayInterval
+  intervalCount: number
+  pillarId: string
+  categoryId?: string | null
+}
 
 export type CreateDebtInput = {
   name: string
   totalAmount: number
-  autoPay?: {
-    monthlyAmount: number
-    startYear: number
-    startMonth: number
-    startDay?: number | null
-    pillarId: string
-    categoryId?: string | null
-  }
+  autoPay?: AutoPayInput
 }
 
 export async function createDebt(input: CreateDebtInput): Promise<{ error?: string }> {
@@ -27,21 +34,9 @@ export async function createDebt(input: CreateDebtInput): Promise<{ error?: stri
   if (!(input.totalAmount > 0)) return { error: 'El monto debe ser mayor a 0.' }
 
   if (input.autoPay) {
-    if (!(input.autoPay.monthlyAmount > 0)) return { error: 'La cuota fija debe ser mayor a 0.' }
-    if (input.autoPay.monthlyAmount > input.totalAmount) {
-      return { error: 'La cuota fija no puede ser mayor al monto total.' }
-    }
-    if (!(input.autoPay.startMonth >= 1 && input.autoPay.startMonth <= 12)) {
-      return { error: 'Mes de inicio inválido.' }
-    }
-    if (!(input.autoPay.startYear >= 2000)) return { error: 'Año de inicio inválido.' }
+    const frequencyError = validateAutoPayFrequency(input.autoPay, input.totalAmount)
+    if (frequencyError) return { error: frequencyError }
     if (!input.autoPay.pillarId) return { error: 'Elegí de qué pilar sale el pago automático.' }
-    if (
-      input.autoPay.startDay != null &&
-      !(input.autoPay.startDay >= 1 && input.autoPay.startDay <= 31)
-    ) {
-      return { error: 'Día de inicio inválido.' }
-    }
   }
 
   const supabase = await createClient()
@@ -64,11 +59,11 @@ export async function createDebt(input: CreateDebtInput): Promise<{ error?: stri
     name,
     total_amount: input.totalAmount,
     remaining_amount: input.totalAmount,
-    monthly_payment: input.autoPay?.monthlyAmount ?? null,
+    auto_pay_amount: input.autoPay?.amount ?? null,
     status: 'active',
-    auto_pay_start_year: input.autoPay?.startYear ?? null,
-    auto_pay_start_month: input.autoPay?.startMonth ?? null,
-    auto_pay_start_day: input.autoPay?.startDay ?? null,
+    auto_pay_start_date: input.autoPay?.startDate ?? null,
+    auto_pay_interval_unit: input.autoPay?.intervalUnit ?? null,
+    auto_pay_interval_count: input.autoPay?.intervalCount ?? null,
     auto_pay_pillar_id: pillarId,
     auto_pay_category_id: categoryId,
   })
@@ -84,6 +79,73 @@ export async function createDebt(input: CreateDebtInput): Promise<{ error?: stri
   }
 
   revalidatePath('/deudas')
+  return {}
+}
+
+// Configura, edita o quita (autoPay: null) el plan de pago automático de una
+// deuda que YA existe — hasta ahora eso solo se podía elegir al crearla.
+export type UpdateAutoPayInput = {
+  debtId: string
+  autoPay: AutoPayInput | null
+}
+
+export async function updateAutoPay(input: UpdateAutoPayInput): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+
+  const { data: debt } = await supabase
+    .from('debts')
+    .select('id, total_amount, status')
+    .eq('id', input.debtId)
+    .eq('user_id', user.id)
+    .maybeSingle()
+  if (!debt) return { error: 'Deuda inválida.' }
+  if (debt.status === 'paid') return { error: 'Esta deuda ya está saldada.' }
+
+  let patch: Record<string, unknown> = {
+    auto_pay_amount: null,
+    auto_pay_start_date: null,
+    auto_pay_interval_unit: null,
+    auto_pay_interval_count: null,
+    auto_pay_pillar_id: null,
+    auto_pay_category_id: null,
+  }
+
+  if (input.autoPay) {
+    const frequencyError = validateAutoPayFrequency(input.autoPay, debt.total_amount)
+    if (frequencyError) return { error: frequencyError }
+    if (!input.autoPay.pillarId) return { error: 'Elegí de qué pilar sale el pago automático.' }
+
+    const source = await validatePillarSource(supabase, user.id, input.autoPay.pillarId, input.autoPay.categoryId)
+    if (source.error) return { error: source.error }
+
+    patch = {
+      auto_pay_amount: input.autoPay.amount,
+      auto_pay_start_date: input.autoPay.startDate,
+      auto_pay_interval_unit: input.autoPay.intervalUnit,
+      auto_pay_interval_count: input.autoPay.intervalCount,
+      auto_pay_pillar_id: source.pillarId,
+      auto_pay_category_id: source.categoryId,
+    }
+  }
+
+  const { error } = await supabase.from('debts').update(patch).eq('id', input.debtId).eq('user_id', user.id)
+  if (error) {
+    console.error('[updateAutoPay] update error:', {
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+      input,
+    })
+    return { error: 'No pudimos guardar el plan automático. Probá de nuevo.' }
+  }
+
+  revalidatePath('/deudas')
+  revalidatePath('/')
   return {}
 }
 
@@ -176,7 +238,7 @@ export async function confirmAutoPayment(input: { debtId: string }): Promise<{ e
   const { data: debt } = await supabase
     .from('debts')
     .select(
-      'id, remaining_amount, status, monthly_payment, auto_pay_start_year, auto_pay_start_month, auto_pay_start_day, auto_pay_pillar_id, auto_pay_category_id'
+      'id, remaining_amount, status, auto_pay_amount, auto_pay_start_date, auto_pay_interval_unit, auto_pay_interval_count, auto_pay_pillar_id, auto_pay_category_id'
     )
     .eq('id', input.debtId)
     .eq('user_id', user.id)
@@ -184,21 +246,18 @@ export async function confirmAutoPayment(input: { debtId: string }): Promise<{ e
   if (!debt) return { error: 'Deuda inválida.' }
   if (debt.status === 'paid') return { error: 'Esta deuda ya está saldada.' }
   // No confiamos en que el cliente solo muestre el botón cuando corresponde.
-  if (!debt.auto_pay_pillar_id || !isAutoPayDue(debt, todayInBolivia())) {
-    return { error: 'Todavía no te toca confirmar esta cuota.' }
-  }
+  const dueDate = debt.auto_pay_pillar_id ? lastDueOccurrence(debt, todayInBolivia()) : null
+  if (!dueDate) return { error: 'Todavía no te toca confirmar esta cuota.' }
 
-  const { start, end } = monthRangeInBolivia()
   const { data: existing } = await supabase
     .from('transactions')
     .select('id')
     .eq('debt_id', debt.id)
-    .gte('date', start)
-    .lte('date', end)
+    .gte('date', dueDate)
     .maybeSingle()
-  if (existing) return { error: 'Ya confirmaste el pago de este mes.' }
+  if (existing) return { error: 'Ya confirmaste esta cuota.' }
 
-  const amount = Math.min(debt.monthly_payment as number, debt.remaining_amount)
+  const amount = Math.min(debt.auto_pay_amount as number, debt.remaining_amount)
   const { remainingAmount, status } = applyDebtPayment(debt, amount)
 
   const { error } = await supabase.from('transactions').insert({

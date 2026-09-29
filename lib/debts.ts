@@ -2,6 +2,16 @@
 // crear la deuda no toca nada). Sin imports de Supabase a propósito, mismo
 // criterio que lib/dashboard.ts y lib/domino.ts.
 
+import {
+  isRecurrenceConfigured,
+  lastDueOccurrence as lastRecurrenceOccurrence,
+  validateRecurrenceFrequency,
+  type DateYMD,
+  type RecurrenceUnit,
+} from './recurrence'
+
+export type { DateYMD }
+
 export type DebtStateRow = { remaining_amount: number }
 export type AppliedPayment = { remainingAmount: number; status: 'active' | 'paid' }
 
@@ -21,39 +31,52 @@ export function applyDebtPayment(debt: DebtStateRow, amount: number): AppliedPay
 // Plan de pago automático (manual §6.2): es un RECORDATORIO, no descuenta
 // solo — el usuario confirma con un botón ("Ya la pagué"). Nunca hay que
 // asumir que una cuota se pagó porque ya pasó la fecha.
+//
+// La frecuencia flexible ("cada N días/meses" desde una fecha de inicio) es
+// la misma matemática genérica de lib/recurrence.ts — acá solo se adapta a
+// los nombres de columna de `debts` y se le suma la validación de monto
+// (una deuda sí tiene un total contra el cual la cuota no puede pasarse; un
+// gasto fijo de categoría, en cambio, no — ver lib/recurrence.ts).
+export type AutoPayInterval = RecurrenceUnit
+
 export type AutoPayConfig = {
-  monthly_payment: number | null
-  auto_pay_start_year: number | null
-  auto_pay_start_month: number | null
-  auto_pay_start_day: number | null
-  auto_pay_pillar_id: string | null
+  auto_pay_amount: number | null
+  auto_pay_start_date: string | null // 'YYYY-MM-DD'
+  auto_pay_interval_unit: AutoPayInterval | null
+  auto_pay_interval_count: number | null
+}
+
+function toRecurrenceConfig(debt: AutoPayConfig) {
+  return {
+    start_date: debt.auto_pay_start_date,
+    interval_unit: debt.auto_pay_interval_unit,
+    interval_count: debt.auto_pay_interval_count,
+  }
 }
 
 export function isAutoPayConfigured(debt: AutoPayConfig): boolean {
-  return (
-    debt.monthly_payment !== null &&
-    debt.auto_pay_pillar_id !== null &&
-    debt.auto_pay_start_year !== null &&
-    debt.auto_pay_start_month !== null
-  )
+  return debt.auto_pay_amount !== null && isRecurrenceConfigured(toRecurrenceConfig(debt))
 }
 
-// ¿Ya llegó el momento de recordar la cuota de este mes? (No dice si ya se
-// confirmó — eso se chequea aparte, contra las transacciones del mes.)
-export function isAutoPayDue(
-  debt: AutoPayConfig,
-  today: { year: number; month: number; day: number }
-): boolean {
-  if (!isAutoPayConfigured(debt)) return false
-  const startYear = debt.auto_pay_start_year as number
-  const startMonth = debt.auto_pay_start_month as number
-
-  if (startYear > today.year) return false
-  if (startYear === today.year && startMonth > today.month) return false
-
-  // En el mes exacto de inicio, si se configuró un día, hay que esperarlo.
-  if (startYear === today.year && startMonth === today.month && debt.auto_pay_start_day) {
-    return today.day >= debt.auto_pay_start_day
-  }
-  return true
+// Fecha (YYYY-MM-DD) del vencimiento más reciente que ya llegó (<= today).
+// null si el plan no está configurado o todavía no arrancó.
+export function lastDueOccurrence(debt: AutoPayConfig, today: DateYMD): string | null {
+  if (debt.auto_pay_amount === null) return null
+  return lastRecurrenceOccurrence(toRecurrenceConfig(debt), today)
 }
+
+// ¿Ya llegó el momento de recordar una cuota? (No dice si ya se confirmó —
+// eso se chequea comparando contra la fecha de la última transacción de
+// esta deuda, ver app/(app)/deudas/page.tsx y app/(app)/page.tsx.)
+export function isAutoPayDue(debt: AutoPayConfig, today: DateYMD): boolean {
+  return lastDueOccurrence(debt, today) !== null
+}
+
+export type AutoPayFrequencyInput = {
+  amount: number
+  startDate: string
+  intervalUnit: AutoPayInterval
+  intervalCount: number
+}
+
+export const validateAutoPayFrequency = validateRecurrenceFrequency

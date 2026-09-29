@@ -6,6 +6,7 @@
 
 import type { PillarName } from '@/lib/dashboard'
 import { formatBs } from '@/lib/format'
+import { PILLAR_COLOR, PILLAR_STROKE } from '@/lib/pillarColors'
 import type { CategoryStat, DonutSegment, PillarStat, TrendPoint } from './EstadisticasView'
 
 const PILLAR_LABEL: Record<PillarName, string> = {
@@ -14,18 +15,6 @@ const PILLAR_LABEL: Record<PillarName, string> = {
   inversion: 'Inversión',
 }
 
-// Orden fijo — nunca reordenar según el valor: el color identifica al
-// pilar, no su magnitud.
-const PILLAR_COLOR: Record<PillarName, string> = {
-  ahorro: 'bg-[#2a78d6] dark:bg-[#3987e5]',
-  gasto: 'bg-[#eb6834] dark:bg-[#d95926]',
-  inversion: 'bg-[#1baf7a] dark:bg-[#199e70]',
-}
-const PILLAR_STROKE: Record<PillarName, string> = {
-  ahorro: 'stroke-[#2a78d6] dark:stroke-[#3987e5] fill-[#2a78d6] dark:fill-[#3987e5]',
-  gasto: 'stroke-[#eb6834] dark:stroke-[#d95926] fill-[#eb6834] dark:fill-[#d95926]',
-  inversion: 'stroke-[#1baf7a] dark:stroke-[#199e70] fill-[#1baf7a] dark:fill-[#199e70]',
-}
 const PILLAR_ORDER: PillarName[] = ['ahorro', 'gasto', 'inversion']
 
 // Un "medidor" por pilar: cuánto había disponible (presupuesto + arrastre)

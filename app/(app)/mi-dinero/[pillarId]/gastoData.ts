@@ -1,0 +1,71 @@
+// Datos del pilar Gasto, compartidos entre la pantalla "elegí" (page.tsx),
+// "Gastos fijos" (fijos/page.tsx) y "Gastos cotidianos" (cotidianos/page.tsx)
+// — separarlos en pantallas propias fue pedido del usuario (antes vivían
+// juntos en una sola lista larga). Un solo lugar para las 4 consultas evita
+// triplicarlas entre las 3 pantallas.
+
+import { createClient } from '@/lib/supabase/server'
+import type { PillarName } from '@/lib/dashboard'
+import type { CategoryListRow } from './CategoryCard'
+
+type SupabaseClient = Awaited<ReturnType<typeof createClient>>
+
+export async function loadGastoPillarData(supabase: SupabaseClient, userId: string, pillarId: string) {
+  const [{ data: pillarRow, error: pillarError }, { data: categories }, { data: transactions }] = await Promise.all([
+    supabase.from('pillars').select('id, name, monthly_amount').eq('id', pillarId).eq('user_id', userId).maybeSingle(),
+    supabase
+      .from('categories')
+      .select('id, name, fixed_amount, is_general')
+      .eq('pillar_id', pillarId)
+      .eq('user_id', userId)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: true }),
+    supabase.from('transactions').select('category_id, amount').eq('user_id', userId).eq('pillar_id', pillarId),
+  ])
+
+  // La página que llama a esto hace `if (!data.pillar) notFound()` — sin
+  // este log, un error transitorio de Supabase (red, sesión refrescándose)
+  // se ve idéntico a "el pilar no existe" y termina en un 404 sin pista de
+  // qué pasó. Esto no cambia el comportamiento, solo lo hace diagnosticable.
+  if (pillarError) {
+    console.error('[loadGastoPillarData] pillar query error:', {
+      message: pillarError.message,
+      details: pillarError.details,
+      hint: pillarError.hint,
+      code: pillarError.code,
+      pillarId,
+    })
+  }
+
+  const accumulatedByCategoryId: Record<string, number> = {}
+  let sinCategoria = 0
+  for (const t of transactions ?? []) {
+    if (t.category_id) {
+      accumulatedByCategoryId[t.category_id] = (accumulatedByCategoryId[t.category_id] ?? 0) + t.amount
+    } else {
+      sinCategoria += t.amount
+    }
+  }
+
+  const pillar = pillarRow as { id: string; name: PillarName; monthly_amount: number } | null
+  const allCategories: CategoryListRow[] = categories ?? []
+  const fixedCategories = allCategories.filter((c) => c.fixed_amount !== null)
+  const everydayCategories = allCategories.filter((c) => c.fixed_amount === null)
+
+  const sum = (rows: CategoryListRow[]) => rows.reduce((s, c) => s + (accumulatedByCategoryId[c.id] ?? 0), 0)
+  const fixedAccumulated = sum(fixedCategories)
+  const everydayAccumulated = sum(everydayCategories) + sinCategoria
+  const totalAcumulado = fixedAccumulated + everydayAccumulated
+
+  return {
+    pillar,
+    allCategories,
+    fixedCategories,
+    everydayCategories,
+    accumulatedByCategoryId,
+    sinCategoria,
+    fixedAccumulated,
+    everydayAccumulated,
+    totalAcumulado,
+  }
+}

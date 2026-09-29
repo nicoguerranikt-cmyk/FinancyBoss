@@ -20,10 +20,15 @@ export async function completeOnboarding(
   if (!(input.income > 0)) {
     return { error: 'El ingreso debe ser mayor a 0.' }
   }
-  const sum =
-    input.pillars.ahorro + input.pillars.gasto + input.pillars.inversion
-  if (Math.round(sum) !== 100) {
-    return { error: 'Los porcentajes de los pilares deben sumar 100%.' }
+  // Migración 0020: los pilares son montos fijos, no %. Pueden sumar menos
+  // que el ingreso (el resto queda como dinero libre), pero nunca más — "no
+  // se puede fabricar plata de la nada".
+  if (input.pillars.ahorro < 0 || input.pillars.gasto < 0 || input.pillars.inversion < 0) {
+    return { error: 'Los montos de los pilares no pueden ser negativos.' }
+  }
+  const sum = input.pillars.ahorro + input.pillars.gasto + input.pillars.inversion
+  if (sum > input.income) {
+    return { error: `Esos montos suman ${sum} Bs, más que tu ingreso de ${input.income} Bs.` }
   }
 
   const supabase = await createClient()
@@ -46,9 +51,9 @@ export async function completeOnboarding(
     p_income: input.income,
     p_auto_repeat: input.autoRepeat,
     p_name: name,
-    p_ahorro_pct: input.pillars.ahorro,
-    p_gasto_pct: input.pillars.gasto,
-    p_inversion_pct: input.pillars.inversion,
+    p_ahorro_amount: input.pillars.ahorro,
+    p_gasto_amount: input.pillars.gasto,
+    p_inversion_amount: input.pillars.inversion,
     p_categories: input.categories,
   })
 
