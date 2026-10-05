@@ -171,6 +171,10 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
                 Cuando te excedas en algo, te decimos <strong>exactamente qué meta</strong> estás sacrificando.
               </li>
             </ul>
+            <p className="mt-4 text-xs text-zinc-500">
+              Más adelante también vas a poder ahorrar en dólares (con conversión manual a
+              bolivianos) y mover tu dinero libre a cualquier categoría cuando quieras.
+            </p>
             <button
               onClick={() => setStep(1)}
               className="mt-8 w-full rounded-lg bg-zinc-900 py-2.5 font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
