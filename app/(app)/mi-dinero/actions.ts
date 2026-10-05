@@ -32,7 +32,7 @@ export async function updatePillarAmounts(input: {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) {
-    return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+    return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
   }
 
   const { data: profile } = await supabase
@@ -56,7 +56,7 @@ export async function updatePillarAmounts(input: {
     (pillars ?? []).map((p) => [p.name, p.id])
   ) as Record<PillarName, string | undefined>
   if (!idByName.ahorro || !idByName.gasto || !idByName.inversion) {
-    return { error: 'No pudimos encontrar tus 3 pilares. Recargá la página.' }
+    return { error: 'No pudimos encontrar tus 3 pilares. Recarga la página.' }
   }
 
   for (const key of PILLAR_NAMES) {
@@ -73,7 +73,7 @@ export async function updatePillarAmounts(input: {
         code: error.code,
         pillar: key,
       })
-      return { error: 'No pudimos guardar los montos. Probá de nuevo.' }
+      return { error: 'No pudimos guardar los montos. Prueba de nuevo.' }
     }
   }
 
@@ -94,7 +94,7 @@ export async function createCategory(input: {
 }): Promise<{ error?: string }> {
   const name = input.name.trim()
   if (!name) {
-    return { error: 'Ingresá un nombre para la categoría.' }
+    return { error: 'Ingresa un nombre para la categoría.' }
   }
   if (name.length > 60) {
     return { error: 'El nombre es demasiado largo.' }
@@ -108,7 +108,7 @@ export async function createCategory(input: {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) {
-    return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+    return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
   }
 
   const { data: pillar } = await supabase
@@ -136,7 +136,7 @@ export async function createCategory(input: {
       code: error.code,
       input,
     })
-    return { error: 'No pudimos crear la categoría. Probá de nuevo.' }
+    return { error: 'No pudimos crear la categoría. Prueba de nuevo.' }
   }
 
   revalidatePath('/mi-dinero')
@@ -177,7 +177,7 @@ export async function updateCategory(input: UpdateCategoryInput): Promise<{ erro
 
   if (input.name !== undefined) {
     const name = input.name.trim()
-    if (!name) return { error: 'Ingresá un nombre para la categoría.' }
+    if (!name) return { error: 'Ingresa un nombre para la categoría.' }
     if (name.length > 60) return { error: 'El nombre es demasiado largo.' }
     patch.name = name
   }
@@ -189,7 +189,7 @@ export async function updateCategory(input: UpdateCategoryInput): Promise<{ erro
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) {
-    return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+    return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
   }
 
   if (touchesFixed) {
@@ -241,7 +241,7 @@ export async function updateCategory(input: UpdateCategoryInput): Promise<{ erro
       patch.auto_repeat = input.autoRepeat
       if (input.autoRepeat) {
         if (!input.fixedSchedule) {
-          return { error: 'Elegí la fecha y la frecuencia del gasto fijo.' }
+          return { error: 'Elige la fecha y la frecuencia del gasto fijo.' }
         }
         const scheduleError = validateRecurrenceSchedule(input.fixedSchedule)
         if (scheduleError) return { error: scheduleError }
@@ -262,7 +262,7 @@ export async function updateCategory(input: UpdateCategoryInput): Promise<{ erro
       return { error: 'La meta de ahorro debe ser mayor a 0.' }
     }
     if (input.savingsGoal !== null && !input.savingsGoal.targetDate) {
-      return { error: 'Elegí una fecha para tu meta de ahorro.' }
+      return { error: 'Elige una fecha para tu meta de ahorro.' }
     }
 
     const { data: category } = await supabase
@@ -306,7 +306,7 @@ export async function updateCategory(input: UpdateCategoryInput): Promise<{ erro
       code: error.code,
       input,
     })
-    return { error: 'No pudimos guardar los cambios. Probá de nuevo.' }
+    return { error: 'No pudimos guardar los cambios. Prueba de nuevo.' }
   }
 
   revalidatePath('/mi-dinero')
@@ -324,7 +324,7 @@ export async function deleteCategory(input: { categoryId: string }): Promise<{ e
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) {
-    return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+    return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
   }
 
   // La categoría "general" de un pilar nunca se borra: es el balde de
@@ -356,7 +356,7 @@ export async function deleteCategory(input: { categoryId: string }): Promise<{ e
       code: error.code,
       input,
     })
-    return { error: 'No pudimos eliminar la categoría. Probá de nuevo.' }
+    return { error: 'No pudimos eliminar la categoría. Prueba de nuevo.' }
   }
 
   revalidatePath('/mi-dinero')
@@ -381,7 +381,7 @@ async function registerPastAmount(input: {
   description: string
 }): Promise<{ error?: string }> {
   if (!(input.amount > 0)) {
-    return { error: 'Ingresá un monto mayor a 0.' }
+    return { error: 'Ingresa un monto mayor a 0.' }
   }
 
   const supabase = await createClient()
@@ -389,7 +389,7 @@ async function registerPastAmount(input: {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) {
-    return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+    return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
   }
 
   const { data: category } = await supabase
@@ -428,7 +428,7 @@ async function registerPastAmount(input: {
       code: error.code,
       input,
     })
-    return { error: 'No pudimos registrarlo. Probá de nuevo.' }
+    return { error: 'No pudimos registrarlo. Prueba de nuevo.' }
   }
 
   revalidatePath('/mi-dinero')
@@ -463,7 +463,7 @@ export async function registerInvestmentReturn(input: {
   destination: { type: 'free_money' } | { type: 'reinvest' } | { type: 'ahorro'; categoryId: string }
 }): Promise<{ error?: string }> {
   if (!(input.amount > 0)) {
-    return { error: 'Ingresá un monto mayor a 0.' }
+    return { error: 'Ingresa un monto mayor a 0.' }
   }
 
   const supabase = await createClient()
@@ -471,7 +471,7 @@ export async function registerInvestmentReturn(input: {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) {
-    return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+    return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
   }
 
   const { data: sourceCategory } = await supabase
@@ -510,7 +510,7 @@ export async function registerInvestmentReturn(input: {
         code: error.code,
         input,
       })
-      return { error: 'No pudimos registrar el retorno. Probá de nuevo.' }
+      return { error: 'No pudimos registrar el retorno. Prueba de nuevo.' }
     }
   } else {
     let destCategoryId: string
@@ -539,7 +539,7 @@ export async function registerInvestmentReturn(input: {
         .eq('user_id', user.id)
         .maybeSingle()
       if (!destPillar || destPillar.name !== 'ahorro') {
-        return { error: 'Elegí una categoría de Ahorro como destino.' }
+        return { error: 'Elige una categoría de Ahorro como destino.' }
       }
       destCategoryId = destCategory.id
       destPillarId = destCategory.pillar_id
@@ -562,7 +562,7 @@ export async function registerInvestmentReturn(input: {
         code: error.code,
         input,
       })
-      return { error: 'No pudimos registrar el retorno. Probá de nuevo.' }
+      return { error: 'No pudimos registrar el retorno. Prueba de nuevo.' }
     }
   }
 
@@ -585,14 +585,14 @@ export async function bumpFixedExpenseThisMonth(input: {
   amount: number
 }): Promise<{ error?: string }> {
   if (!(input.amount > 0)) {
-    return { error: 'Ingresá un monto mayor a 0.' }
+    return { error: 'Ingresa un monto mayor a 0.' }
   }
 
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const { data: category } = await supabase
     .from('categories')
@@ -632,7 +632,7 @@ export async function bumpFixedExpenseThisMonth(input: {
       code: error.code,
       input,
     })
-    return { error: 'No pudimos registrar el aumento. Probá de nuevo.' }
+    return { error: 'No pudimos registrar el aumento. Prueba de nuevo.' }
   }
 
   revalidatePath('/mi-dinero')

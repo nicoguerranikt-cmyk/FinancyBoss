@@ -17,10 +17,10 @@ export type CreateDebtorInput = {
 
 export async function createDebtor(input: CreateDebtorInput): Promise<{ error?: string }> {
   const name = input.name.trim()
-  if (!name) return { error: 'Ingresá el nombre de quién te debe.' }
+  if (!name) return { error: 'Ingresa el nombre de quién te debe.' }
   if (name.length > 60) return { error: 'El nombre es demasiado largo.' }
   if (!(input.totalAmount > 0)) return { error: 'El monto debe ser mayor a 0.' }
-  if (!input.lentDate) return { error: 'Ingresá la fecha del préstamo.' }
+  if (!input.lentDate) return { error: 'Ingresa la fecha del préstamo.' }
 
   const description = input.description?.trim() || null
   if (description && description.length > 200) return { error: 'La descripción es demasiado larga.' }
@@ -29,7 +29,7 @@ export async function createDebtor(input: CreateDebtorInput): Promise<{ error?: 
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const { error } = await supabase.from('debtors').insert({
     user_id: user.id,
@@ -49,7 +49,7 @@ export async function createDebtor(input: CreateDebtorInput): Promise<{ error?: 
       code: error.code,
       input,
     })
-    return { error: 'No pudimos guardar el registro. Probá de nuevo.' }
+    return { error: 'No pudimos guardar el registro. Prueba de nuevo.' }
   }
 
   revalidatePath('/deudores')
@@ -73,7 +73,7 @@ export async function registerCollection(input: RegisterCollectionInput): Promis
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const { data: debtor } = await supabase
     .from('debtors')
@@ -112,7 +112,7 @@ export async function registerCollection(input: RegisterCollectionInput): Promis
       code: error.code,
       input,
     })
-    return { error: 'No pudimos registrar el cobro. Probá de nuevo.' }
+    return { error: 'No pudimos registrar el cobro. Prueba de nuevo.' }
   }
 
   const { error: updateError } = await supabase
@@ -128,7 +128,7 @@ export async function registerCollection(input: RegisterCollectionInput): Promis
       code: updateError.code,
       input,
     })
-    return { error: 'No pudimos actualizar el registro. Probá de nuevo.' }
+    return { error: 'No pudimos actualizar el registro. Prueba de nuevo.' }
   }
 
   revalidatePath('/deudores')
@@ -143,7 +143,7 @@ export async function archiveDebtor(input: { debtorId: string }): Promise<{ erro
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const { error } = await supabase
     .from('debtors')
@@ -158,7 +158,7 @@ export async function archiveDebtor(input: { debtorId: string }): Promise<{ erro
       code: error.code,
       input,
     })
-    return { error: 'No pudimos archivar el registro. Probá de nuevo.' }
+    return { error: 'No pudimos archivar el registro. Prueba de nuevo.' }
   }
 
   revalidatePath('/deudores')

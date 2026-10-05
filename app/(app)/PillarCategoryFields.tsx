@@ -47,7 +47,7 @@ export default function PillarCategoryFields({
         className={`${inputClass} [color-scheme:light] dark:[color-scheme:dark]`}
       >
         <option value="" className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
-          Elegí un pilar
+          Elige un pilar
         </option>
         {pillars.map((p) => (
           <option key={p.id} value={p.id} className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">

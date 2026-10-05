@@ -86,10 +86,10 @@ export default function LinkedDebtInviteForm({ role, todayIso }: { role: 'debtor
   }
 
   function validateDetailFields(): string | null {
-    if (!newName.trim()) return 'Ingresá un nombre para esta deuda.'
+    if (!newName.trim()) return 'Ingresa un nombre para esta deuda.'
     if (!(Number(newTotal) > 0)) return 'El monto debe ser mayor a 0.'
     if (autoPayEnabled) {
-      if (!autoPayStartDate) return 'Elegí la fecha del primer pago.'
+      if (!autoPayStartDate) return 'Elige la fecha del primer pago.'
       if (!(Number(autoPayIntervalCount) > 0)) return 'La frecuencia debe ser mayor a 0.'
     }
     return null
@@ -275,7 +275,7 @@ export default function LinkedDebtInviteForm({ role, todayIso }: { role: 'debtor
           )}
           {lookupResult && (
             <p className="text-sm">
-              Encontramos a <span className="font-medium">{lookupResult.name}</span>. Completá los datos:
+              Encontramos a <span className="font-medium">{lookupResult.name}</span>. Completa los datos:
             </p>
           )}
         </>
@@ -283,7 +283,7 @@ export default function LinkedDebtInviteForm({ role, todayIso }: { role: 'debtor
 
       {shareMethod === 'link' && !generatedLink && (
         <p className="text-sm text-zinc-500">
-          Completá los datos y generá un link para mandarle a la otra persona — no hace falta que
+          Completa los datos y genera un link para mandarle a la otra persona — no hace falta que
           ya tenga cuenta en FinancyBoss, ni que sepas su email o username. Va a ver una pantalla
           con estos datos y un botón para aceptar antes de que el vínculo se cree.
         </p>
@@ -307,7 +307,7 @@ export default function LinkedDebtInviteForm({ role, todayIso }: { role: 'debtor
             </>
           ) : (
             <>
-              <p className="text-sm">Listo, mandale este link a la otra persona:</p>
+              <p className="text-sm">Listo, mándale este link a la otra persona:</p>
               <div className="flex gap-2">
                 <input
                   readOnly

@@ -89,7 +89,7 @@ export type RecurrenceInput = {
 // Validación de "fecha + frecuencia" sola, sin monto (la usa Gasto fijo,
 // que no tiene un "monto total" contra el cual comparar la cuota).
 export function validateRecurrenceSchedule(input: RecurrenceInput): string | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.startDate)) return 'Elegí una fecha de inicio válida.'
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.startDate)) return 'Elige una fecha de inicio válida.'
   if (input.intervalUnit !== 'day' && input.intervalUnit !== 'month') return 'Frecuencia inválida.'
   if (!(Number.isInteger(input.intervalCount) && input.intervalCount > 0)) {
     return 'La frecuencia debe ser un número entero mayor a 0.'

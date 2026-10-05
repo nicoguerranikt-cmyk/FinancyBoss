@@ -44,6 +44,15 @@ export default async function MiDineroPage() {
     (a, b) => PILLAR_ORDER.indexOf(a.name) - PILLAR_ORDER.indexOf(b.name)
   )
 
+  // Dinero libre es líquido disponible AHORA, no algo que recién aparece al
+  // cerrar el mes: lo ya acreditado (meses cerrados + movimientos a mano)
+  // más lo que sobra del mes en curso todavía sin cerrar (mismo cálculo que
+  // computeDashboard, campo freeMoney — acá no hace falta traer todo lo
+  // demás que pide esa función, el pilar no se "escala" para esta cuenta).
+  const committedThisMonth = sortedPillars.reduce((sum, p) => sum + p.monthly_amount, 0)
+  const currentMonthFreeMoney = Math.max(0, baseIncome - committedThisMonth)
+  const totalDineroLibre = freeMoneyAccumulated + currentMonthFreeMoney
+
   // Acumulado histórico por pilar (todas las transacciones de siempre, sin
   // filtro de mes — a diferencia del Dashboard, que sí es mensual).
   const accumulatedByPillarId: Record<string, number> = {}
@@ -57,8 +66,8 @@ export default async function MiDineroPage() {
       <section>
         <h1 className="text-xl font-semibold tracking-tight">Mi Dinero</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          Organizá cómo se distribuye tu ingreso entre los 3 pilares. Entrá a cada uno para ver sus
-          categorías, cuánta plata tenés acumulada y el historial de movimientos.
+          Organiza cómo se distribuye tu ingreso entre los 3 pilares. Entra a cada uno para ver sus
+          categorías, cuánta plata tienes acumulada y el historial de movimientos.
         </p>
       </section>
 
@@ -115,8 +124,8 @@ export default async function MiDineroPage() {
             <p className="font-medium">Dinero libre</p>
           </div>
           <div className="text-right">
-            <p className="font-semibold text-brand-violet">{formatBs(freeMoneyAccumulated)} Bs</p>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">acumulado</p>
+            <p className="font-semibold text-brand-violet">{formatBs(totalDineroLibre)} Bs</p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">disponible</p>
           </div>
         </Link>
       </section>

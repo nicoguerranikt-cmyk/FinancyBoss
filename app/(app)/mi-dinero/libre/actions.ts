@@ -25,7 +25,7 @@ export async function registerFreeMoneyMovement(
   input: RegisterFreeMoneyMovementInput
 ): Promise<{ error?: string }> {
   if (!(input.amount > 0)) {
-    return { error: 'Ingresá un monto mayor a 0.' }
+    return { error: 'Ingresa un monto mayor a 0.' }
   }
 
   const supabase = await createClient()
@@ -33,7 +33,7 @@ export async function registerFreeMoneyMovement(
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) {
-    return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+    return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
   }
 
   const { error } = await supabase.from('free_money_transactions').insert({
@@ -44,11 +44,57 @@ export async function registerFreeMoneyMovement(
   })
 
   if (error) {
-    return { error: 'No pudimos registrar el movimiento. Probá de nuevo.' }
+    return { error: 'No pudimos registrar el movimiento. Prueba de nuevo.' }
   }
 
   revalidatePath('/mi-dinero/libre')
   revalidatePath('/mi-dinero')
+  revalidatePath('/')
+  return {}
+}
+
+// Asignar Dinero libre a una categoría (migración 0028): mismo patrón que
+// convertir USD a Bs, pero al revés — el origen es el pozo de Dinero libre
+// y el destino puede ser cualquier categoría (Ahorro, Gasto o Inversión).
+// Las dos escrituras (restar del pozo, sumar el ingreso en la categoría)
+// son atómicas adentro de allocate_free_money_to_category — quedan las dos
+// o ninguna, nunca a medias.
+export async function allocateFreeMoneyToCategory(input: {
+  amount: number
+  categoryId: string
+  description?: string
+  date?: string
+}): Promise<{ error?: string }> {
+  if (!(input.amount > 0)) return { error: 'Ingresa un monto mayor a 0.' }
+  if (!input.categoryId) return { error: 'Elige a qué categoría va.' }
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
+
+  const { error } = await supabase.rpc('allocate_free_money_to_category', {
+    p_amount: input.amount,
+    p_category_id: input.categoryId,
+    p_description: input.description?.trim() || null,
+    p_date: input.date ?? null,
+  })
+  if (error) {
+    console.error('[allocateFreeMoneyToCategory] rpc error:', {
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+      input,
+    })
+    return { error: error.message || 'No pudimos asignar la plata. Prueba de nuevo.' }
+  }
+
+  revalidatePath('/mi-dinero/libre')
+  revalidatePath('/mi-dinero')
+  revalidatePath('/mi-dinero/[pillarId]', 'page')
+  revalidatePath('/mi-dinero/[pillarId]/[categoryId]', 'page')
   revalidatePath('/')
   return {}
 }

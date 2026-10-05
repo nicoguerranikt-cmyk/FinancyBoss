@@ -13,7 +13,7 @@ export default function RegistroPage() {
       <div className="w-full max-w-sm">
         <PiggyBankAnimation />
         <h1 className="text-center text-2xl font-semibold tracking-tight">Crear cuenta</h1>
-        <p className="mt-1 text-center text-sm text-zinc-500">Empezá a ordenar tu plata con FinancyBoss.</p>
+        <p className="mt-1 text-center text-sm text-zinc-500">Empieza a ordenar tu plata con FinancyBoss.</p>
 
         <form action={formAction} className="mt-8 flex flex-col gap-4">
           <div className="flex flex-col gap-1">
@@ -81,9 +81,9 @@ export default function RegistroPage() {
         </form>
 
         <p className="mt-6 text-center text-sm text-zinc-500">
-          ¿Ya tenés cuenta?{' '}
+          ¿Ya tienes cuenta?{' '}
           <Link href="/login" className="font-medium text-zinc-900 underline dark:text-zinc-100">
-            Iniciá sesión
+            Inicia sesión
           </Link>
         </p>
       </div>

@@ -19,7 +19,7 @@ export async function signup(
     return { error: 'El nombre debe tener al menos 2 caracteres.' }
   }
   if (!email.includes('@')) {
-    return { error: 'Ingresá un email válido.' }
+    return { error: 'Ingresa un email válido.' }
   }
   if (password.length < 8) {
     return { error: 'La contraseña debe tener al menos 8 caracteres.' }
@@ -38,14 +38,14 @@ export async function signup(
     if (error.message.toLowerCase().includes('already registered')) {
       return { error: 'Ya existe una cuenta con ese email.' }
     }
-    return { error: 'No pudimos crear la cuenta. Probá de nuevo.' }
+    return { error: 'No pudimos crear la cuenta. Prueba de nuevo.' }
   }
 
   // Si Supabase tiene activada la confirmación por email, todavía no hay sesión.
   if (!data.session) {
     return {
       message:
-        'Te enviamos un email para confirmar tu cuenta. Revisá tu bandeja y luego iniciá sesión.',
+        'Te enviamos un email para confirmar tu cuenta. Revisa tu bandeja y luego inicia sesión.',
     }
   }
 

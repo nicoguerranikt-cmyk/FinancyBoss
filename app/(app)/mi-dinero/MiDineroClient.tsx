@@ -71,7 +71,7 @@ export default function MiDineroClient({ pillars, baseIncome }: { pillars: Pilla
     <section>
       <h2 className="text-lg font-semibold tracking-tight">Distribución de pilares</h2>
       <p className="mt-1 text-sm text-zinc-500">
-        Elegí cuánto destinás a cada uno (en Bs). Lo que sobre queda como dinero libre.
+        Elige cuánto destinas a cada uno (en Bs). Lo que sobre queda como dinero libre.
       </p>
 
       <div className="mt-4 grid grid-cols-3 gap-3">

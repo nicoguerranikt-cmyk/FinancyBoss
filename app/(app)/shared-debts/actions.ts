@@ -22,13 +22,13 @@ export async function findUserByEmail(
   email: string
 ): Promise<{ userId: string; name: string } | { error: string }> {
   const trimmed = email.trim()
-  if (!trimmed) return { error: 'Ingresá un email.' }
+  if (!trimmed) return { error: 'Ingresa un email.' }
 
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const { data, error } = await supabase.rpc('find_user_by_email', { p_email: trimmed })
   if (error) {
@@ -42,7 +42,7 @@ export async function findUserByEmail(
     // propio email" (ese mensaje sí es seguro de mostrar tal cual) — email
     // inexistente o sin onboarding terminar no tira excepción, devuelve 0
     // filas (se maneja más abajo con el mismo mensaje genérico).
-    return { error: error.message || 'No pudimos buscar esa cuenta. Probá de nuevo.' }
+    return { error: error.message || 'No pudimos buscar esa cuenta. Prueba de nuevo.' }
   }
   const row = data?.[0]
   if (!row) return { error: 'No encontramos una cuenta de FinancyBoss con ese email.' }
@@ -54,13 +54,13 @@ export async function findUserByUsername(
   username: string
 ): Promise<{ userId: string; name: string } | { error: string }> {
   const trimmed = username.trim()
-  if (!trimmed) return { error: 'Ingresá un nombre de usuario.' }
+  if (!trimmed) return { error: 'Ingresa un nombre de usuario.' }
 
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const { data, error } = await supabase.rpc('find_user_by_username', { p_username: trimmed })
   if (error) {
@@ -70,7 +70,7 @@ export async function findUserByUsername(
       hint: error.hint,
       code: error.code,
     })
-    return { error: error.message || 'No pudimos buscar esa cuenta. Probá de nuevo.' }
+    return { error: error.message || 'No pudimos buscar esa cuenta. Prueba de nuevo.' }
   }
   const row = data?.[0]
   if (!row) return { error: 'No encontramos una cuenta de FinancyBoss con ese nombre de usuario.' }
@@ -92,7 +92,7 @@ export type CreateSharedDebtInvite = {
 
 export async function createSharedDebtInvite(input: CreateSharedDebtInvite): Promise<{ error?: string }> {
   const name = input.name.trim()
-  if (!name) return { error: 'Ingresá un nombre para esta deuda.' }
+  if (!name) return { error: 'Ingresa un nombre para esta deuda.' }
   if (name.length > 60) return { error: 'El nombre es demasiado largo.' }
   if (!(input.totalAmount > 0)) return { error: 'El monto debe ser mayor a 0.' }
 
@@ -105,7 +105,7 @@ export async function createSharedDebtInvite(input: CreateSharedDebtInvite): Pro
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   // profiles.RLS es "cada uno lee solo su propio perfil" — así que el
   // nombre de la CONTRAPARTE hay que guardarlo ahora (viene de
@@ -143,7 +143,7 @@ export async function createSharedDebtInvite(input: CreateSharedDebtInvite): Pro
       code: error.code,
       input,
     })
-    return { error: 'No pudimos enviar la invitación. Probá de nuevo.' }
+    return { error: 'No pudimos enviar la invitación. Prueba de nuevo.' }
   }
 
   revalidateShared()
@@ -155,7 +155,7 @@ export async function acceptSharedDebtInvite(input: { sharedDebtId: string }): P
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const { error } = await supabase
     .from('shared_debts')
@@ -171,7 +171,7 @@ export async function acceptSharedDebtInvite(input: { sharedDebtId: string }): P
       code: error.code,
       input,
     })
-    return { error: 'No pudimos aceptar la invitación. Probá de nuevo.' }
+    return { error: 'No pudimos aceptar la invitación. Prueba de nuevo.' }
   }
 
   revalidateShared()
@@ -183,7 +183,7 @@ export async function rejectSharedDebtInvite(input: { sharedDebtId: string }): P
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const { error } = await supabase
     .from('shared_debts')
@@ -199,7 +199,7 @@ export async function rejectSharedDebtInvite(input: { sharedDebtId: string }): P
       code: error.code,
       input,
     })
-    return { error: 'No pudimos rechazar la invitación. Probá de nuevo.' }
+    return { error: 'No pudimos rechazar la invitación. Prueba de nuevo.' }
   }
 
   revalidateShared()
@@ -211,7 +211,7 @@ export async function archiveSharedDebt(input: { sharedDebtId: string }): Promis
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const { error } = await supabase
     .from('shared_debts')
@@ -227,7 +227,7 @@ export async function archiveSharedDebt(input: { sharedDebtId: string }): Promis
       code: error.code,
       input,
     })
-    return { error: 'No pudimos archivar la deuda. Probá de nuevo.' }
+    return { error: 'No pudimos archivar la deuda. Prueba de nuevo.' }
   }
 
   revalidateShared()
@@ -250,7 +250,7 @@ export async function proposeSharedPayment(
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const { data: debt } = await supabase
     .from('shared_debts')
@@ -287,7 +287,7 @@ export async function proposeSharedPayment(
       code: error.code,
       input,
     })
-    return { error: 'No pudimos proponer el pago. Probá de nuevo.' }
+    return { error: 'No pudimos proponer el pago. Prueba de nuevo.' }
   }
 
   revalidateShared()
@@ -299,7 +299,7 @@ export async function rejectSharedPayment(input: { paymentId: string; note?: str
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const note = input.note?.trim()
   if (note && note.length > 200) return { error: 'La nota es demasiado larga.' }
@@ -317,7 +317,7 @@ export async function rejectSharedPayment(input: { paymentId: string; note?: str
       code: error.code,
       input,
     })
-    return { error: 'No pudimos rechazar el pago. Probá de nuevo.' }
+    return { error: 'No pudimos rechazar el pago. Prueba de nuevo.' }
   }
 
   revalidateShared()
@@ -335,7 +335,7 @@ export async function confirmSharedPayment(input: ConfirmSharedPaymentInput): Pr
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   // Validación rápida del lado del cliente/servidor Next para dar un buen
   // mensaje de error — la seguridad real la vuelve a chequear
@@ -357,7 +357,7 @@ export async function confirmSharedPayment(input: ConfirmSharedPaymentInput): Pr
       code: error.code,
       input,
     })
-    return { error: error.message || 'No pudimos confirmar el pago. Probá de nuevo.' }
+    return { error: error.message || 'No pudimos confirmar el pago. Prueba de nuevo.' }
   }
 
   revalidateShared()
@@ -384,7 +384,7 @@ export async function createSharedDebtLinkInvite(
   input: CreateSharedDebtLinkInvite
 ): Promise<{ token: string } | { error: string }> {
   const name = input.name.trim()
-  if (!name) return { error: 'Ingresá un nombre para esta deuda.' }
+  if (!name) return { error: 'Ingresa un nombre para esta deuda.' }
   if (name.length > 60) return { error: 'El nombre es demasiado largo.' }
   if (!(input.totalAmount > 0)) return { error: 'El monto debe ser mayor a 0.' }
 
@@ -397,7 +397,7 @@ export async function createSharedDebtLinkInvite(
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const { data, error } = await supabase
     .from('shared_debt_link_invites')
@@ -422,7 +422,7 @@ export async function createSharedDebtLinkInvite(
       code: error.code,
       input,
     })
-    return { error: 'No pudimos crear el link. Probá de nuevo.' }
+    return { error: 'No pudimos crear el link. Prueba de nuevo.' }
   }
 
   return { token: data.token }
@@ -444,7 +444,7 @@ export async function getSharedDebtLinkInvite(
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const { data, error } = await supabase.rpc('get_shared_debt_link_invite', { p_token: token })
   if (error) {
@@ -454,7 +454,7 @@ export async function getSharedDebtLinkInvite(
       hint: error.hint,
       code: error.code,
     })
-    return { error: 'No pudimos abrir este link. Probá de nuevo.' }
+    return { error: 'No pudimos abrir este link. Prueba de nuevo.' }
   }
   const row = data?.[0]
   if (!row) return { error: 'Este link no es válido.' }
@@ -476,7 +476,7 @@ export async function acceptSharedDebtLinkInvite(
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const { data, error } = await supabase.rpc('accept_shared_debt_link_invite', { p_token: token })
   if (error) {
@@ -486,10 +486,10 @@ export async function acceptSharedDebtLinkInvite(
       hint: error.hint,
       code: error.code,
     })
-    return { error: error.message || 'No pudimos aceptar este link. Probá de nuevo.' }
+    return { error: error.message || 'No pudimos aceptar este link. Prueba de nuevo.' }
   }
   const row = data?.[0]
-  if (!row) return { error: 'No pudimos aceptar este link. Probá de nuevo.' }
+  if (!row) return { error: 'No pudimos aceptar este link. Prueba de nuevo.' }
 
   revalidateShared()
   return { role: row.your_role }
@@ -500,7 +500,7 @@ export async function revokeSharedDebtLinkInvite(input: { token: string }): Prom
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const { error } = await supabase
     .from('shared_debt_link_invites')
@@ -516,7 +516,7 @@ export async function revokeSharedDebtLinkInvite(input: { token: string }): Prom
       code: error.code,
       input,
     })
-    return { error: 'No pudimos cancelar el link. Probá de nuevo.' }
+    return { error: 'No pudimos cancelar el link. Prueba de nuevo.' }
   }
 
   revalidateShared()
@@ -542,7 +542,7 @@ export async function getCreditorPaymentQrUrl(input: {
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const { data: debt } = await supabase
     .from('shared_debts')
@@ -564,7 +564,7 @@ export async function getCreditorPaymentQrUrl(input: {
     .createSignedUrl(creditorProfile.payment_qr_path, 60 * 10)
   if (error) {
     console.error('[getCreditorPaymentQrUrl] signed url error:', error)
-    return { error: 'No pudimos cargar el QR. Probá de nuevo.' }
+    return { error: 'No pudimos cargar el QR. Prueba de nuevo.' }
   }
 
   return { qrUrl: signed.signedUrl }
@@ -574,7 +574,7 @@ export async function uploadPaymentReceipt(formData: FormData): Promise<{ error?
   const paymentId = String(formData.get('paymentId') ?? '')
   const file = formData.get('file')
   if (!paymentId) return { error: 'Pago inválido.' }
-  if (!(file instanceof File) || file.size === 0) return { error: 'Elegí una imagen.' }
+  if (!(file instanceof File) || file.size === 0) return { error: 'Elige una imagen.' }
   if (!ALLOWED_IMAGE_TYPES.includes(file.type)) return { error: 'Tiene que ser una imagen (PNG, JPG o WEBP).' }
   if (file.size > MAX_IMAGE_BYTES) return { error: 'La imagen no puede pesar más de 5 MB.' }
 
@@ -582,7 +582,7 @@ export async function uploadPaymentReceipt(formData: FormData): Promise<{ error?
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const { data: payment } = await supabase
     .from('shared_debt_payments')
@@ -602,7 +602,7 @@ export async function uploadPaymentReceipt(formData: FormData): Promise<{ error?
     .upload(path, file, { upsert: true, contentType: file.type })
   if (uploadError) {
     console.error('[uploadPaymentReceipt] upload error:', uploadError)
-    return { error: 'No pudimos subir el comprobante. Probá de nuevo.' }
+    return { error: 'No pudimos subir el comprobante. Prueba de nuevo.' }
   }
 
   const { error } = await supabase.from('shared_debt_payments').update({ receipt_path: path }).eq('id', paymentId)
@@ -613,7 +613,7 @@ export async function uploadPaymentReceipt(formData: FormData): Promise<{ error?
       hint: error.hint,
       code: error.code,
     })
-    return { error: 'No pudimos guardar el comprobante. Probá de nuevo.' }
+    return { error: 'No pudimos guardar el comprobante. Prueba de nuevo.' }
   }
 
   revalidateShared()
@@ -627,7 +627,7 @@ export async function getPaymentReceiptUrl(input: {
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const { data: payment } = await supabase
     .from('shared_debt_payments')
@@ -645,14 +645,14 @@ export async function getPaymentReceiptUrl(input: {
     .eq('id', payment.shared_debt_id)
     .or(`debtor_user_id.eq.${user.id},creditor_user_id.eq.${user.id}`)
     .maybeSingle()
-  if (!debt) return { error: 'No tenés acceso a este comprobante.' }
+  if (!debt) return { error: 'No tienes acceso a este comprobante.' }
 
   const { data: signed, error } = await supabase.storage
     .from('payment-media')
     .createSignedUrl(payment.receipt_path, 60 * 10)
   if (error) {
     console.error('[getPaymentReceiptUrl] signed url error:', error)
-    return { error: 'No pudimos cargar el comprobante. Probá de nuevo.' }
+    return { error: 'No pudimos cargar el comprobante. Prueba de nuevo.' }
   }
 
   return { receiptUrl: signed.signedUrl }

@@ -96,11 +96,11 @@ export default function DeudasClient({
   async function handleRegisterPayment(debtId: string) {
     const amount = Number(paymentAmount)
     if (!(amount > 0)) {
-      setPaymentError((prev) => ({ ...prev, [debtId]: 'Ingresá un monto mayor a 0.' }))
+      setPaymentError((prev) => ({ ...prev, [debtId]: 'Ingresa un monto mayor a 0.' }))
       return
     }
     if (!paymentPillarId) {
-      setPaymentError((prev) => ({ ...prev, [debtId]: 'Elegí un pilar.' }))
+      setPaymentError((prev) => ({ ...prev, [debtId]: 'Elige un pilar.' }))
       return
     }
 
@@ -144,11 +144,11 @@ export default function DeudasClient({
 
   async function handleSaveAutoPay(debtId: string) {
     if (!editAutoPayPillarId) {
-      setAutoPayError((prev) => ({ ...prev, [debtId]: 'Elegí de qué pilar sale el pago automático.' }))
+      setAutoPayError((prev) => ({ ...prev, [debtId]: 'Elige de qué pilar sale el pago automático.' }))
       return
     }
     if (!editAutoPayStartDate) {
-      setAutoPayError((prev) => ({ ...prev, [debtId]: 'Elegí la fecha del primer pago.' }))
+      setAutoPayError((prev) => ({ ...prev, [debtId]: 'Elige la fecha del primer pago.' }))
       return
     }
     if (!(Number(editAutoPayIntervalCount) > 0)) {
@@ -211,7 +211,7 @@ export default function DeudasClient({
 
   return (
     <section className="flex flex-col gap-3">
-      {debts.length === 0 && <p className="text-sm text-zinc-500">Todavía no tenés deudas cargadas.</p>}
+      {debts.length === 0 && <p className="text-sm text-zinc-500">Todavía no tienes deudas cargadas.</p>}
 
       {[...activeDebts, ...paidDebts].map((debt) => {
         const progress = debt.total_amount > 0 ? (1 - debt.remaining_amount / debt.total_amount) * 100 : 100

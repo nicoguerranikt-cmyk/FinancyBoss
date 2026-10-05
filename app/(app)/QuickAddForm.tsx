@@ -144,7 +144,7 @@ export default function QuickAddForm({
 
     const amountNumber = Number(amount)
     if (!(amountNumber > 0)) {
-      setError('Ingresá un monto mayor a 0.')
+      setError('Ingresa un monto mayor a 0.')
       return
     }
 
@@ -170,7 +170,7 @@ export default function QuickAddForm({
     }
 
     if (!effectivePillarId) {
-      setError('Elegí un pilar.')
+      setError('Elige un pilar.')
       return
     }
 
@@ -217,11 +217,11 @@ export default function QuickAddForm({
     setResolveError(null)
 
     if ((resolveChoice === 'ahorro' || resolveChoice === 'inversion') && !resolveCategoryId) {
-      setResolveError('Elegí una subcategoría.')
+      setResolveError('Elige una subcategoría.')
       return
     }
     if (resolveChoice === 'debt' && !debtName.trim()) {
-      setResolveError('Ingresá quién te prestó la plata.')
+      setResolveError('Ingresa quién te prestó la plata.')
       return
     }
 
@@ -357,8 +357,8 @@ export default function QuickAddForm({
               </option>
             </select>
             <p className="text-xs text-zinc-500">
-              Gasto no puede recibir ingresos — solo registra gastos. Si necesitás más presupuesto
-              para un gasto fijo puntual, configuralo directo en esa categoría, en Gastos fijos.
+              Gasto no puede recibir ingresos — solo registra gastos. Si necesitas más presupuesto
+              para un gasto fijo puntual, configúralo directo en esa categoría, en Gastos fijos.
             </p>
           </div>
         )}
@@ -468,7 +468,7 @@ export default function QuickAddForm({
                     className="ml-6 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 outline-none [color-scheme:light] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:[color-scheme:dark]"
                   >
                     <option value="" className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
-                      Elegí una subcategoría
+                      Elige una subcategoría
                     </option>
                     {ahorroCategoryOptions.map((c) => (
                       <option key={c.id} value={c.id} className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
@@ -494,7 +494,7 @@ export default function QuickAddForm({
                     className="ml-6 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 outline-none [color-scheme:light] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:[color-scheme:dark]"
                   >
                     <option value="" className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
-                      Elegí una subcategoría
+                      Elige una subcategoría
                     </option>
                     {inversionCategoryOptions.map((c) => (
                       <option key={c.id} value={c.id} className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">

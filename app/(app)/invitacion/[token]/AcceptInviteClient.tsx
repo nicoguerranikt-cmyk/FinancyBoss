@@ -38,7 +38,7 @@ export default function AcceptInviteClient({
         </p>
       )}
       <button onClick={handleAccept} disabled={accepting} className={primaryButtonClass}>
-        {accepting ? 'Aceptando…' : direction === 'yo_debo' ? 'Aceptar (te deben esto)' : 'Aceptar (le debés esto)'}
+        {accepting ? 'Aceptando…' : direction === 'yo_debo' ? 'Aceptar (te deben esto)' : 'Aceptar (le debes esto)'}
       </button>
     </div>
   )

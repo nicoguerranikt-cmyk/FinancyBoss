@@ -39,7 +39,7 @@ export async function validatePillarSource(
     return {
       pillarId: pillar.id,
       categoryId: null,
-      error: 'Esa categoría es un gasto fijo — elegí otra o dejala sin categoría.',
+      error: 'Esa categoría es un gasto fijo — elige otra o déjala sin categoría.',
     }
   }
 

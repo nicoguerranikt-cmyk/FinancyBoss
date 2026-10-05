@@ -58,6 +58,14 @@ export default async function PillarCategoriesPage({
   const { pillar } = data
   const isGasto = pillar.name === 'gasto'
 
+  // Ahorro en USD (migración 0027): un pozo aparte, no forma parte del
+  // acumulado en Bs de arriba — solo se pide cuando hace falta.
+  let usdBalance = 0
+  if (pillar.name === 'ahorro') {
+    const { data: usdRows } = await supabase.from('usd_savings_transactions').select('amount_usd').eq('user_id', userId)
+    usdBalance = (usdRows ?? []).reduce((sum, r) => sum + r.amount_usd, 0)
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
       <PageReadySignal />
@@ -94,9 +102,18 @@ export default async function PillarCategoriesPage({
         </div>
       ) : (
         <div className="flex flex-col gap-2">
+          {pillar.name === 'ahorro' && (
+            <Link
+              href={`/mi-dinero/${pillarId}/usd`}
+              className="flex items-center justify-between rounded-xl border border-zinc-200 p-4 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
+            >
+              <p className="font-medium">Ahorro en USD</p>
+              <p className="font-semibold">{usdBalance.toFixed(2)} USD</p>
+            </Link>
+          )}
           {data.allCategories.length === 0 && (
             <p className="text-sm text-zinc-500">
-              Todavía no tenés categorías acá. El saldo queda como &quot;libre&quot; dentro de este pilar.
+              Todavía no tienes categorías acá. El saldo queda como &quot;libre&quot; dentro de este pilar.
             </p>
           )}
           {data.allCategories.map((category) => (

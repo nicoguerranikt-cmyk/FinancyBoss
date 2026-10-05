@@ -30,7 +30,7 @@ export default function AddCategoryForm({
     if (withFixedAmount) {
       const n = Number(amount)
       if (!(n > 0)) {
-        setError('Ingresá un monto mayor a 0.')
+        setError('Ingresa un monto mayor a 0.')
         return
       }
       fixedAmount = n

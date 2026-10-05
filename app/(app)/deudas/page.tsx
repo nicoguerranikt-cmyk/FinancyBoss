@@ -150,7 +150,7 @@ export default async function DeudasPage() {
         <h1 className="text-xl font-semibold tracking-tight">Deudas</h1>
         <p className="mt-1 text-sm text-zinc-500">
           Crear una deuda no resta nada. Solo un pago registrado resta, en el momento en que lo
-          registrás.
+          registras.
         </p>
       </section>
       <NewDebtForm pillars={pillars ?? []} categories={categories ?? []} todayIso={today.iso} />

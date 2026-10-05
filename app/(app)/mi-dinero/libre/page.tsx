@@ -19,14 +19,33 @@ export default async function DineroLibrePage() {
   // El layout ya garantiza que hay sesión y perfil; user siempre existe acá.
   const userId = user!.id
 
-  const { data: movements } = await supabase
-    .from('free_money_transactions')
-    .select('id, amount, description, date, credit_month')
-    .eq('user_id', userId)
-    .order('date', { ascending: false })
-    .order('created_at', { ascending: false })
+  const [{ data: movements }, { data: pillars }, { data: profile }, { data: categories }] = await Promise.all([
+    supabase
+      .from('free_money_transactions')
+      .select('id, amount, description, date, credit_month')
+      .eq('user_id', userId)
+      .order('date', { ascending: false })
+      .order('created_at', { ascending: false }),
+    supabase.from('pillars').select('id, name, monthly_amount').eq('user_id', userId),
+    supabase.from('profiles').select('base_income').eq('id', userId).single(),
+    supabase.from('categories').select('id, name, pillar_id').eq('user_id', userId).is('deleted_at', null),
+  ])
 
-  const total = (movements ?? []).reduce((sum, m) => sum + m.amount, 0)
+  const pillarNameById = Object.fromEntries((pillars ?? []).map((p) => [p.id, p.name]))
+  const PILLAR_LABEL: Record<string, string> = { ahorro: 'Ahorro', gasto: 'Gasto', inversion: 'Inversión' }
+  const categoryOptions = (categories ?? [])
+    .map((c) => ({ id: c.id, name: c.name, pillarLabel: PILLAR_LABEL[pillarNameById[c.pillar_id]] ?? '' }))
+    .sort((a, b) => a.pillarLabel.localeCompare(b.pillarLabel) || a.name.localeCompare(b.name))
+
+  const accumulated = (movements ?? []).reduce((sum, m) => sum + m.amount, 0)
+
+  // Dinero libre es líquido disponible AHORA, no algo que recién aparece al
+  // cerrar el mes: lo ya acreditado (meses cerrados + movimientos a mano,
+  // arriba) más lo que sobra del mes en curso todavía sin cerrar (mismo
+  // cálculo que computeDashboard, campo freeMoney).
+  const committedThisMonth = (pillars ?? []).reduce((sum, p) => sum + p.monthly_amount, 0)
+  const currentMonthFreeMoney = Math.max(0, (profile?.base_income ?? 0) - committedThisMonth)
+  const total = accumulated + currentMonthFreeMoney
 
   const today = todayInBolivia()
   const daysRemaining = daysInMonth(today.year, today.month) - today.day + 1
@@ -68,11 +87,22 @@ export default async function DineroLibrePage() {
           </div>
         </div>
         <p className="mt-2 text-xs text-zinc-500">
-          Tres formas de ver el mismo total: cuánto es si lo repartís en lo que queda de este mes.
+          Tres formas de ver el mismo total: cuánto es si lo repartes en lo que queda de este mes.
         </p>
+        {currentMonthFreeMoney > 0 && (
+          <p className="mt-2 text-xs text-zinc-500">
+            Incluye {formatBs(currentMonthFreeMoney)} Bs de este mes, todavía sin cerrar — se
+            acredita solo a tu historial recién cuando termine el mes.
+          </p>
+        )}
       </div>
 
-      <LibreClient movements={movements ?? []} todayIso={today.iso} />
+      <LibreClient
+        movements={movements ?? []}
+        todayIso={today.iso}
+        availableAmount={total}
+        categoryOptions={categoryOptions}
+      />
     </div>
   )
 }

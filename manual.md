@@ -135,7 +135,17 @@ No hay tour completo de la app.
   3. **A una categoría de Ahorro** — el usuario elige a cuál de sus categorías de Ahorro (por ejemplo, si se armó una propia como "Ganancias").
 - No se creó ninguna tabla nueva: los 3 destinos reusan `free_money_transactions` y `transactions`, con las mismas reglas de contabilidad que cualquier otro movimiento — cada retorno queda trackeado y con su origen claro.
 
-### 2.6 Monto mensual vs. monto ya acumulado (Ahorro/Inversión)
+### 2.6 Ahorro en USD (fase 1, migración 0027)
+
+Primer paso hacia multi-moneda, a propósito acotado: **no** es un pilar nuevo ni moneda por categoría — es un solo pozo en dólares que vive dentro de la pantalla de Ahorro (`/mi-dinero/[pillarId]/usd`, solo para ese pilar).
+
+- **Agregar USD**: el usuario deposita dólares. No toca nada de Bs.
+- **Convertir a Bs**: el usuario dice cuántos USD saca y a cuántos Bs equivalen **hoy** — el tipo de cambio es siempre manual, nunca automático (en Bolivia varía día a día y no hay una fuente única confiable). Elige a qué categoría de Ahorro va esa plata ya convertida.
+- La conversión no puede superar lo que hay en el pozo ("no se puede fabricar plata de la nada", mismo criterio que el resto del proyecto).
+- Las dos escrituras de una conversión (restar del pozo en USD, sumar el ingreso en Bs a la categoría) son **atómicas**: corren dentro de una función de Postgres (`convert_usd_savings_to_bs`), mismo criterio que `confirm_shared_payment` — quedan las dos filas o ninguna, nunca a medias.
+- No afecta el resto de la app: pilares, presupuesto diario, efecto dominó, todo sigue igual.
+
+### 2.7 Monto mensual vs. monto ya acumulado (Ahorro/Inversión)
 
 Una confusión posible: `categories.fixed_amount` en una categoría de Ahorro/Inversión es el aporte que le llega **cada mes** del reparto del pilar — no el total que el usuario ya tenía ahorrado/invertido antes de usar la app. Son dos cosas distintas, con su propio lugar:
 
@@ -197,6 +207,14 @@ movimiento.
     mismo criterio "aritmética sobre un mes que ya terminó, sin pedir
     confirmación" que ya usa el arrastre de saldo de los pilares. Si sobró 0,
     no genera fila.
+  - **El total que se muestra es líquido disponible YA, no algo que recién
+    aparece al cerrar el mes**: es lo ya acreditado (`free_money_transactions`,
+    meses cerrados + movimientos a mano) **más** `freeMoney` del mes en curso
+    todavía sin cerrar (mismo cálculo que `computeDashboard`). El Dashboard,
+    Mi Dinero y `/mi-dinero/libre` suman ambas partes antes de mostrar el
+    número — ningún lugar muestra solo lo acreditado, sería mostrar de menos
+    (corregido: antes de esto, el total mostrado ignoraba el mes en curso y
+    daba 0 Bs hasta que el mes cerraba, lo cual confundía al usuario).
   - **Movimiento manual**: el usuario puede cargar un gasto o ingreso puntual
     contra esta plata sin destino, con su propio botón "Registrar" — nunca es
     algo que la app haga sola (ver principio "no asumir movimientos de
@@ -208,6 +226,14 @@ movimiento.
     del mismo total, no una configuración guardada.
   - El Dashboard muestra el total acumulado con un acceso directo a esta
     pantalla.
+  - **Asignar a una categoría** (migración 0028): desde la propia pantalla, el
+    usuario puede mandar parte de su Dinero libre a cualquier categoría
+    (Ahorro, Gasto o Inversión) — por ejemplo, para fondear un gasto fijo
+    nuevo o reforzar una meta de ahorro. Mismo patrón que convertir USD a Bs
+    (migración 0027): las dos escrituras (restar del pozo, sumar el ingreso
+    en la categoría) son atómicas (`allocate_free_money_to_category`), y no
+    se puede asignar más de lo que el total disponible permite (acreditado +
+    lo que sobra del mes en curso).
   - El acceso rápido del Dashboard (`QuickAddForm`) tiene "Dinero libre" como
     destino elegible, tanto en "Gasto" ("Sale de: Gasto / Dinero libre") como
     en "Ingreso extra" (junto a los 3 pilares) — un movimiento cargado ahí

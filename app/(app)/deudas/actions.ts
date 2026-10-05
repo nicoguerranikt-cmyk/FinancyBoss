@@ -29,21 +29,21 @@ export type CreateDebtInput = {
 
 export async function createDebt(input: CreateDebtInput): Promise<{ error?: string }> {
   const name = input.name.trim()
-  if (!name) return { error: 'Ingresá un nombre para la deuda.' }
+  if (!name) return { error: 'Ingresa un nombre para la deuda.' }
   if (name.length > 60) return { error: 'El nombre es demasiado largo.' }
   if (!(input.totalAmount > 0)) return { error: 'El monto debe ser mayor a 0.' }
 
   if (input.autoPay) {
     const frequencyError = validateAutoPayFrequency(input.autoPay, input.totalAmount)
     if (frequencyError) return { error: frequencyError }
-    if (!input.autoPay.pillarId) return { error: 'Elegí de qué pilar sale el pago automático.' }
+    if (!input.autoPay.pillarId) return { error: 'Elige de qué pilar sale el pago automático.' }
   }
 
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   let pillarId: string | null = null
   let categoryId: string | null = null
@@ -75,7 +75,7 @@ export async function createDebt(input: CreateDebtInput): Promise<{ error?: stri
       code: error.code,
       input,
     })
-    return { error: 'No pudimos crear la deuda. Probá de nuevo.' }
+    return { error: 'No pudimos crear la deuda. Prueba de nuevo.' }
   }
 
   revalidatePath('/deudas')
@@ -94,7 +94,7 @@ export async function updateAutoPay(input: UpdateAutoPayInput): Promise<{ error?
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const { data: debt } = await supabase
     .from('debts')
@@ -117,7 +117,7 @@ export async function updateAutoPay(input: UpdateAutoPayInput): Promise<{ error?
   if (input.autoPay) {
     const frequencyError = validateAutoPayFrequency(input.autoPay, debt.total_amount)
     if (frequencyError) return { error: frequencyError }
-    if (!input.autoPay.pillarId) return { error: 'Elegí de qué pilar sale el pago automático.' }
+    if (!input.autoPay.pillarId) return { error: 'Elige de qué pilar sale el pago automático.' }
 
     const source = await validatePillarSource(supabase, user.id, input.autoPay.pillarId, input.autoPay.categoryId)
     if (source.error) return { error: source.error }
@@ -141,7 +141,7 @@ export async function updateAutoPay(input: UpdateAutoPayInput): Promise<{ error?
       code: error.code,
       input,
     })
-    return { error: 'No pudimos guardar el plan automático. Probá de nuevo.' }
+    return { error: 'No pudimos guardar el plan automático. Prueba de nuevo.' }
   }
 
   revalidatePath('/deudas')
@@ -163,7 +163,7 @@ export async function registerPayment(input: RegisterPaymentInput): Promise<{ er
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const { data: debt } = await supabase
     .from('debts')
@@ -200,7 +200,7 @@ export async function registerPayment(input: RegisterPaymentInput): Promise<{ er
       code: error.code,
       input,
     })
-    return { error: 'No pudimos registrar el pago. Probá de nuevo.' }
+    return { error: 'No pudimos registrar el pago. Prueba de nuevo.' }
   }
 
   const { error: updateError } = await supabase
@@ -216,7 +216,7 @@ export async function registerPayment(input: RegisterPaymentInput): Promise<{ er
       code: updateError.code,
       input,
     })
-    return { error: 'No pudimos actualizar la deuda. Probá de nuevo.' }
+    return { error: 'No pudimos actualizar la deuda. Prueba de nuevo.' }
   }
 
   revalidatePath('/deudas')
@@ -233,7 +233,7 @@ export async function confirmAutoPayment(input: { debtId: string }): Promise<{ e
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const { data: debt } = await supabase
     .from('debts')
@@ -278,7 +278,7 @@ export async function confirmAutoPayment(input: { debtId: string }): Promise<{ e
       code: error.code,
       input,
     })
-    return { error: 'No pudimos registrar el pago. Probá de nuevo.' }
+    return { error: 'No pudimos registrar el pago. Prueba de nuevo.' }
   }
 
   const { error: updateError } = await supabase
@@ -294,7 +294,7 @@ export async function confirmAutoPayment(input: { debtId: string }): Promise<{ e
       code: updateError.code,
       input,
     })
-    return { error: 'No pudimos actualizar la deuda. Probá de nuevo.' }
+    return { error: 'No pudimos actualizar la deuda. Prueba de nuevo.' }
   }
 
   revalidatePath('/deudas')
@@ -307,7 +307,7 @@ export async function markDebtPaid(input: { debtId: string }): Promise<{ error?:
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   // Perdonar saldo no es lo mismo que pagar: no se registra ningún pago,
   // solo se cierra la deuda.
@@ -324,7 +324,7 @@ export async function markDebtPaid(input: { debtId: string }): Promise<{ error?:
       code: error.code,
       input,
     })
-    return { error: 'No pudimos marcar la deuda como pagada. Probá de nuevo.' }
+    return { error: 'No pudimos marcar la deuda como pagada. Prueba de nuevo.' }
   }
 
   revalidatePath('/deudas')
@@ -339,7 +339,7 @@ export async function archiveDebt(input: { debtId: string }): Promise<{ error?: 
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const { data: debt } = await supabase
     .from('debts')
@@ -363,7 +363,7 @@ export async function archiveDebt(input: { debtId: string }): Promise<{ error?: 
       code: error.code,
       input,
     })
-    return { error: 'No pudimos archivar la deuda. Probá de nuevo.' }
+    return { error: 'No pudimos archivar la deuda. Prueba de nuevo.' }
   }
 
   revalidatePath('/deudas')

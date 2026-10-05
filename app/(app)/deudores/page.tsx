@@ -76,8 +76,8 @@ export default async function DeudoresPage() {
       <section>
         <h1 className="text-xl font-semibold tracking-tight">Deudores</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          Acá registrás a quién le prestaste plata. Un cobro se convierte en un ingreso extra, a
-          donde vos elijas.
+          Acá registras a quién le prestaste plata. Un cobro se convierte en un ingreso extra, a
+          donde tú elijas.
         </p>
       </section>
       <NewDebtorForm todayIso={todayIso} />

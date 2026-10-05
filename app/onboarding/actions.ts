@@ -36,7 +36,7 @@ export async function completeOnboarding(
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) {
-    return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+    return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
   }
 
   // El nombre lo tomamos de los metadatos del usuario (guardados en el registro)
@@ -66,7 +66,7 @@ export async function completeOnboarding(
       code: error.code,
       categoriesEnviadas: input.categories,
     })
-    return { error: 'No pudimos guardar tu configuración. Probá de nuevo.' }
+    return { error: 'No pudimos guardar tu configuración. Prueba de nuevo.' }
   }
 
   // Limpiamos el cache y entramos al dashboard.

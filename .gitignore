@@ -42,3 +42,6 @@ next-env.d.ts
 
 # supabase CLI local cache
 /supabase/.temp/
+
+# claude code local agent worktrees
+/.claude/

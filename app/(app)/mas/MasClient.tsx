@@ -134,7 +134,7 @@ export default function MasClient({
       <section>
         <h2 className="text-lg font-semibold tracking-tight">QR de cobro</h2>
         <p className="mt-1 text-sm text-zinc-500">
-          Subí el QR con el que te pagan (banco, billetera). Cuando alguien te deba plata en una
+          Sube el QR con el que te pagan (banco, billetera). Cuando alguien te deba plata en una
           deuda vinculada, lo va a ver en pantalla al momento de proponer el pago.
         </p>
         <div className="mt-3 flex items-start gap-3">
@@ -158,7 +158,7 @@ export default function MasClient({
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v12m0-12 4 4m-4-4-4 4M4 18h16" />
                 </svg>
                 <span className="px-2 text-xs font-medium text-zinc-500">
-                  {qrSaving ? 'Subiendo…' : 'Subí una imagen'}
+                  {qrSaving ? 'Subiendo…' : 'Sube una imagen'}
                 </span>
               </>
             )}
@@ -221,7 +221,7 @@ export default function MasClient({
           </label>
           {!autoRepeatIncome && (
             <p className="text-xs text-zinc-500">
-              Con esto desactivado, tenés que volver acá a cargar el ingreso manualmente al
+              Con esto desactivado, tienes que volver acá a cargar el ingreso manualmente al
               empezar cada mes.
             </p>
           )}

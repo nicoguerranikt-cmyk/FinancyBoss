@@ -102,7 +102,7 @@ function computeCategoryPatch(
     if (draft.autoRepeat) {
       const count = Number(draft.fixedIntervalCount)
       if (!draft.fixedStartDate) {
-        error = error ?? 'Elegí la fecha del primer descuento.'
+        error = error ?? 'Elige la fecha del primer descuento.'
       } else if (!(Number.isInteger(count) && count > 0)) {
         error = error ?? 'La frecuencia debe ser un número entero mayor a 0.'
       } else {
@@ -124,7 +124,7 @@ function computeCategoryPatch(
     if (amountEmpty && dateEmpty) {
       patch.savingsGoal = null
     } else if (amountEmpty || dateEmpty) {
-      error = error ?? 'Completá el monto y la fecha de tu meta (o dejá los dos vacíos).'
+      error = error ?? 'Completa el monto y la fecha de tu meta (o deja los dos vacíos).'
     } else {
       const n = Number(draft.goalAmount)
       if (!(n > 0)) {
@@ -275,7 +275,7 @@ export default function CategoryDetailClient({
     setPastSavingsSuccess(false)
     const amountNumber = Number(pastSavingsAmount)
     if (!(amountNumber > 0)) {
-      setPastSavingsError('Ingresá un monto mayor a 0.')
+      setPastSavingsError('Ingresa un monto mayor a 0.')
       return
     }
     setPastSavingsSaving(true)
@@ -299,7 +299,7 @@ export default function CategoryDetailClient({
     setPastInvestmentSuccess(false)
     const amountNumber = Number(pastInvestmentAmount)
     if (!(amountNumber > 0)) {
-      setPastInvestmentError('Ingresá un monto mayor a 0.')
+      setPastInvestmentError('Ingresa un monto mayor a 0.')
       return
     }
     setPastInvestmentSaving(true)
@@ -323,7 +323,7 @@ export default function CategoryDetailClient({
     setBumpSuccess(false)
     const amountNumber = Number(bumpAmount)
     if (!(amountNumber > 0)) {
-      setBumpError('Ingresá un monto mayor a 0.')
+      setBumpError('Ingresa un monto mayor a 0.')
       return
     }
     setBumpSaving(true)
@@ -342,11 +342,11 @@ export default function CategoryDetailClient({
     setReturnSuccess(false)
     const amountNumber = Number(returnAmount)
     if (!(amountNumber > 0)) {
-      setReturnError('Ingresá un monto mayor a 0.')
+      setReturnError('Ingresa un monto mayor a 0.')
       return
     }
     if (returnDestination === 'ahorro' && !returnAhorroCategoryId) {
-      setReturnError('Elegí a qué categoría de Ahorro va.')
+      setReturnError('Elige a qué categoría de Ahorro va.')
       return
     }
     setReturnSaving(true)
@@ -541,7 +541,7 @@ export default function CategoryDetailClient({
             <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
               <p className="text-sm font-medium">Registrar retorno</p>
               <p className="mt-1 text-xs text-zinc-500">
-                La ganancia de esta inversión — elegí a dónde va.
+                La ganancia de esta inversión — elige a dónde va.
               </p>
 
               <div className="mt-3 flex flex-col gap-1.5">
@@ -789,7 +789,7 @@ export default function CategoryDetailClient({
               </div>
               <p className="text-xs text-zinc-500">
                 Es el aporte que le llega cada mes del reparto de {pillarName === 'ahorro' ? 'Ahorro' : 'Inversión'}
-                — no el total que ya {pillarName === 'ahorro' ? 'ahorraste' : 'invertiste'}. Para cargar eso, usá
+                — no el total que ya {pillarName === 'ahorro' ? 'ahorraste' : 'invertiste'}. Para cargar eso, usa
                 &quot;{pillarName === 'ahorro' ? 'Registrar ahorro previo' : 'Registrar monto ya invertido'}&quot; en Consulta.
               </p>
             </div>

@@ -43,11 +43,11 @@ export default function NewDebtForm({
   async function handleCreateDebt() {
     const name = newName.trim()
     const totalAmount = Number(newTotal)
-    if (!name) return setCreateError('Ingresá un nombre para la deuda.')
+    if (!name) return setCreateError('Ingresa un nombre para la deuda.')
     if (!(totalAmount > 0)) return setCreateError('El monto debe ser mayor a 0.')
     if (autoPayEnabled) {
-      if (!autoPayPillarId) return setCreateError('Elegí de qué pilar sale el pago automático.')
-      if (!autoPayStartDate) return setCreateError('Elegí la fecha del primer pago.')
+      if (!autoPayPillarId) return setCreateError('Elige de qué pilar sale el pago automático.')
+      if (!autoPayStartDate) return setCreateError('Elige la fecha del primer pago.')
       if (!(Number(autoPayIntervalCount) > 0)) return setCreateError('La frecuencia debe ser mayor a 0.')
     }
 

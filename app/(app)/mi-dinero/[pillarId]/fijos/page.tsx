@@ -69,14 +69,14 @@ export default async function GastosFijosPage({
       {data.fixedCategories.length > 0 && (
         <div className={sumBarClass(percentValid)}>
           {percentValid
-            ? `Tus gastos fijos usan ${formatBs(fixedTotal)} Bs de los ${formatBs(gastoAmount)} Bs que destinás a Gasto — te quedan ${formatBs(remaining)} Bs para tus gastos variables.`
-            : `Ojo: tus gastos fijos (${formatBs(fixedTotal)} Bs) ya superan los ${formatBs(gastoAmount)} Bs que destinás a Gasto — no te queda margen para gastos variables.`}
+            ? `Tus gastos fijos usan ${formatBs(fixedTotal)} Bs de los ${formatBs(gastoAmount)} Bs que destinas a Gasto — te quedan ${formatBs(remaining)} Bs para tus gastos variables.`
+            : `Ojo: tus gastos fijos (${formatBs(fixedTotal)} Bs) ya superan los ${formatBs(gastoAmount)} Bs que destinas a Gasto — no te queda margen para gastos variables.`}
         </div>
       )}
 
       <div className="flex flex-col gap-2">
         {data.fixedCategories.length === 0 ? (
-          <p className="text-sm text-zinc-500">Todavía no tenés gastos fijos. Creá el primero abajo.</p>
+          <p className="text-sm text-zinc-500">Todavía no tienes gastos fijos. Crea el primero abajo.</p>
         ) : (
           data.fixedCategories.map((category) => (
             <CategoryCard

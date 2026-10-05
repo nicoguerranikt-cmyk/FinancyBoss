@@ -53,7 +53,7 @@ export default async function GastosCotidianosPage({
 
       <div className="flex flex-col gap-2">
         {data.everydayCategories.length === 0 && data.sinCategoria === 0 && (
-          <p className="text-sm text-zinc-500">Todavía no tenés categorías variables.</p>
+          <p className="text-sm text-zinc-500">Todavía no tienes categorías variables.</p>
         )}
         {data.everydayCategories.map((category) => (
           <CategoryCard

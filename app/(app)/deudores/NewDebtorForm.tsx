@@ -27,7 +27,7 @@ export default function NewDebtorForm({ todayIso }: { todayIso: string }) {
   async function handleCreateDebtor() {
     const name = newName.trim()
     const totalAmount = Number(newTotal)
-    if (!name) return setCreateError('Ingresá el nombre de quién te debe.')
+    if (!name) return setCreateError('Ingresa el nombre de quién te debe.')
     if (!(totalAmount > 0)) return setCreateError('El monto debe ser mayor a 0.')
 
     setCreating(true)

@@ -111,8 +111,8 @@ export default function SharedDebtsSection({
 
   async function handlePropose(sharedDebtId: string) {
     const amount = Number(proposeAmount)
-    if (!(amount > 0)) return setProposeError('Ingresá un monto mayor a 0.')
-    if (!proposePillarId) return setProposeError('Elegí un pilar.')
+    if (!(amount > 0)) return setProposeError('Ingresa un monto mayor a 0.')
+    if (!proposePillarId) return setProposeError('Elige un pilar.')
 
     setProposeSaving(true)
     setProposeError(null)
@@ -160,7 +160,7 @@ export default function SharedDebtsSection({
   }
 
   async function handleConfirmPayment(paymentId: string) {
-    if (!confirmPillarId) return setConfirmError('Elegí a qué pilar entra esa plata.')
+    if (!confirmPillarId) return setConfirmError('Elige a qué pilar entra esa plata.')
     setConfirmSaving((prev) => ({ ...prev, [paymentId]: true }))
     setConfirmError(null)
     const res = await confirmSharedPayment({
@@ -219,7 +219,7 @@ export default function SharedDebtsSection({
 
       <div className="mt-3 flex flex-col gap-3">
         {visible.length === 0 && (
-          <p className="text-sm text-zinc-500">Todavía no tenés deudas vinculadas.</p>
+          <p className="text-sm text-zinc-500">Todavía no tienes deudas vinculadas.</p>
         )}
 
         {visible.map((debt) => {
@@ -243,7 +243,7 @@ export default function SharedDebtsSection({
                   {isInvitee ? (
                     <>
                       <span className="text-sm text-zinc-500">
-                        Te invitó a una deuda de {formatBs(debt.total_amount)} Bs. ¿Aceptás?
+                        Te invitó a una deuda de {formatBs(debt.total_amount)} Bs. ¿Aceptas?
                       </span>
                       <button
                         onClick={() => handleAccept(debt.id)}
@@ -450,7 +450,7 @@ export default function SharedDebtsSection({
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v12m0-12 4 4m-4-4-4 4M4 18h16" />
                               </svg>
                               <span className="truncate text-zinc-500">
-                                {proposeReceiptFile ? proposeReceiptFile.name : 'Subí una foto del comprobante'}
+                                {proposeReceiptFile ? proposeReceiptFile.name : 'Sube una foto del comprobante'}
                               </span>
                               <input
                                 type="file"

@@ -60,11 +60,11 @@ export default function DeudoresClient({
   async function handleRegisterCollection(debtorId: string) {
     const amount = Number(collectionAmount)
     if (!(amount > 0)) {
-      setCollectionError((prev) => ({ ...prev, [debtorId]: 'Ingresá un monto mayor a 0.' }))
+      setCollectionError((prev) => ({ ...prev, [debtorId]: 'Ingresa un monto mayor a 0.' }))
       return
     }
     if (!collectionPillarId) {
-      setCollectionError((prev) => ({ ...prev, [debtorId]: 'Elegí a dónde va ese dinero.' }))
+      setCollectionError((prev) => ({ ...prev, [debtorId]: 'Elige a dónde va ese dinero.' }))
       return
     }
 
@@ -100,7 +100,7 @@ export default function DeudoresClient({
 
   return (
     <section className="flex flex-col gap-3">
-      {debtors.length === 0 && <p className="text-sm text-zinc-500">Todavía no tenés deudores cargados.</p>}
+      {debtors.length === 0 && <p className="text-sm text-zinc-500">Todavía no tienes deudores cargados.</p>}
 
       {[...pendingDebtors, ...paidDebtors].map((debtor) => {
         const progress =

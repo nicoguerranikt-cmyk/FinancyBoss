@@ -42,7 +42,7 @@ export type UpdateProfileInput = {
 // y el toggle de repetición vive en "Configuración" (sección 9).
 export async function updateProfile(input: UpdateProfileInput): Promise<{ error?: string }> {
   const name = input.name.trim()
-  if (!name) return { error: 'Ingresá tu nombre.' }
+  if (!name) return { error: 'Ingresa tu nombre.' }
   if (name.length > 60) return { error: 'El nombre es demasiado largo.' }
   if (!(input.baseIncome > 0)) return { error: 'El ingreso debe ser mayor a 0.' }
 
@@ -58,14 +58,14 @@ export async function updateProfile(input: UpdateProfileInput): Promise<{ error?
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   // Guardar acá (desde Más) cuenta como "confirmar el ingreso de este mes"
   // (manual §3.1) — mismo criterio que el resto del proyecto: no hay
   // historial, solo el año/mes vigente.
   const { error } = await writeProfileConfirmation(supabase, user.id, { ...input, name, username: usernameInput })
   if (error?.code === '23505') {
-    return { error: 'Ese nombre de usuario ya está en uso. Probá con otro.' }
+    return { error: 'Ese nombre de usuario ya está en uso. Prueba con otro.' }
   }
   if (error) {
     console.error('[updateProfile] update error:', {
@@ -75,7 +75,7 @@ export async function updateProfile(input: UpdateProfileInput): Promise<{ error?
       code: error.code,
       input,
     })
-    return { error: 'No pudimos guardar los cambios. Probá de nuevo.' }
+    return { error: 'No pudimos guardar los cambios. Prueba de nuevo.' }
   }
 
   // El reparto mensual se genera con los montos fijos de cada pilar/
@@ -110,7 +110,7 @@ const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 export async function uploadPaymentQr(formData: FormData): Promise<{ error?: string }> {
   const file = formData.get('file')
   if (!(file instanceof File) || file.size === 0) {
-    return { error: 'Elegí una imagen.' }
+    return { error: 'Elige una imagen.' }
   }
   if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
     return { error: 'Tiene que ser una imagen (PNG, JPG o WEBP).' }
@@ -123,7 +123,7 @@ export async function uploadPaymentQr(formData: FormData): Promise<{ error?: str
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   const path = `qr/${user.id}/qr`
   const { error: uploadError } = await supabase.storage
@@ -131,7 +131,7 @@ export async function uploadPaymentQr(formData: FormData): Promise<{ error?: str
     .upload(path, file, { upsert: true, contentType: file.type })
   if (uploadError) {
     console.error('[uploadPaymentQr] upload error:', uploadError)
-    return { error: 'No pudimos subir la imagen. Probá de nuevo.' }
+    return { error: 'No pudimos subir la imagen. Prueba de nuevo.' }
   }
 
   const { error } = await supabase.from('profiles').update({ payment_qr_path: path }).eq('id', user.id)
@@ -142,7 +142,7 @@ export async function uploadPaymentQr(formData: FormData): Promise<{ error?: str
       hint: error.hint,
       code: error.code,
     })
-    return { error: 'No pudimos guardar la imagen. Probá de nuevo.' }
+    return { error: 'No pudimos guardar la imagen. Prueba de nuevo.' }
   }
 
   revalidatePath('/mas')
@@ -154,7 +154,7 @@ export async function removePaymentQr(): Promise<{ error?: string }> {
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
   await supabase.storage.from('payment-media').remove([`qr/${user.id}/qr`])
 
@@ -166,7 +166,7 @@ export async function removePaymentQr(): Promise<{ error?: string }> {
       hint: error.hint,
       code: error.code,
     })
-    return { error: 'No pudimos sacar la imagen. Probá de nuevo.' }
+    return { error: 'No pudimos sacar la imagen. Prueba de nuevo.' }
   }
 
   revalidatePath('/mas')

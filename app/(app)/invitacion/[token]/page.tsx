@@ -36,7 +36,7 @@ export default async function SharedDebtInvitePage({ params }: { params: Promise
               </>
             ) : (
               <>
-                le debés <span className="font-medium">{formatBs(result.totalAmount)} Bs</span>
+                le debes <span className="font-medium">{formatBs(result.totalAmount)} Bs</span>
               </>
             )}
             .
@@ -46,7 +46,7 @@ export default async function SharedDebtInvitePage({ params }: { params: Promise
             {result.description && <p className="text-sm text-zinc-500">{result.description}</p>}
           </div>
           <p className="text-xs text-zinc-500">
-            Si aceptás, esto va a aparecer en tu pestaña de{' '}
+            Si aceptas, esto va a aparecer en tu pestaña de{' '}
             {result.direction === 'yo_debo' ? 'Deudores' : 'Deudas'}. No se descuenta ni acredita
             nada todavía — eso pasa recién cuando se proponga y confirme un pago.
           </p>

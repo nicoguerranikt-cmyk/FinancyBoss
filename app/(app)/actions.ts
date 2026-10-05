@@ -45,7 +45,7 @@ export async function registerTransaction(
     return { error: 'Tipo de movimiento inválido.' }
   }
   if (!input.pillarId) {
-    return { error: 'Elegí un pilar.' }
+    return { error: 'Elige un pilar.' }
   }
 
   const supabase = await createClient()
@@ -53,7 +53,7 @@ export async function registerTransaction(
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) {
-    return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+    return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
   }
 
   // El pillarId/categoryId vienen del cliente: un server action es un
@@ -111,7 +111,7 @@ export async function registerTransaction(
       code: error.code,
       input,
     })
-    return { error: 'No pudimos guardar el movimiento. Probá de nuevo.' }
+    return { error: 'No pudimos guardar el movimiento. Prueba de nuevo.' }
   }
 
   revalidatePath('/')
@@ -266,7 +266,7 @@ export async function coverWithAhorro(input: {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) {
-    return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+    return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
   }
 
   const { data: tx } = await supabase
@@ -294,7 +294,7 @@ export async function coverWithAhorro(input: {
       hint: error.hint,
       code: error.code,
     })
-    return { error: 'No pudimos registrar la cobertura. Probá de nuevo.' }
+    return { error: 'No pudimos registrar la cobertura. Prueba de nuevo.' }
   }
 
   revalidatePath('/')
@@ -325,7 +325,7 @@ export async function resolveDeficit(input: ResolveDeficitInput): Promise<{ erro
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) {
-    return { error: 'Tu sesión expiró. Volvé a iniciar sesión.' }
+    return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
   }
 
   const { data: tx } = await supabase
@@ -344,7 +344,7 @@ export async function resolveDeficit(input: ResolveDeficitInput): Promise<{ erro
 
   if (input.choice === 'ahorro' || input.choice === 'inversion') {
     if (!input.categoryId) {
-      return { error: 'Elegí una subcategoría.' }
+      return { error: 'Elige una subcategoría.' }
     }
 
     const { data: category } = await supabase
@@ -383,7 +383,7 @@ export async function resolveDeficit(input: ResolveDeficitInput): Promise<{ erro
         hint: error.hint,
         code: error.code,
       })
-      return { error: 'No pudimos guardar la resolución. Probá de nuevo.' }
+      return { error: 'No pudimos guardar la resolución. Prueba de nuevo.' }
     }
 
     revalidatePath('/')
@@ -393,7 +393,7 @@ export async function resolveDeficit(input: ResolveDeficitInput): Promise<{ erro
   // choice === 'debt'
   const name = input.debtName?.trim()
   if (!name) {
-    return { error: 'Ingresá quién te prestó la plata.' }
+    return { error: 'Ingresa quién te prestó la plata.' }
   }
 
   // Deudas v2 (manual §6): crear la deuda no configura ningún plan de pago
@@ -418,7 +418,7 @@ export async function resolveDeficit(input: ResolveDeficitInput): Promise<{ erro
       hint: debtError?.hint,
       code: debtError?.code,
     })
-    return { error: 'No pudimos registrar el préstamo. Probá de nuevo.' }
+    return { error: 'No pudimos registrar el préstamo. Prueba de nuevo.' }
   }
 
   const { error } = await supabase.from('domino_events').insert({
@@ -436,7 +436,7 @@ export async function resolveDeficit(input: ResolveDeficitInput): Promise<{ erro
       hint: error.hint,
       code: error.code,
     })
-    return { error: 'No pudimos guardar la resolución. Probá de nuevo.' }
+    return { error: 'No pudimos guardar la resolución. Prueba de nuevo.' }
   }
 
   revalidatePath('/')

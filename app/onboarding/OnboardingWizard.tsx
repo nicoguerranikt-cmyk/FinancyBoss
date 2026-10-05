@@ -165,10 +165,10 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
                 Tu plata se divide en <strong>3 pilares</strong>: Ahorro, Gasto e Inversión.
               </li>
               <li className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-                <strong>Vos decidís</strong> cuánta plata va a cada uno.
+                <strong>Tú decides</strong> cuánta plata va a cada uno.
               </li>
               <li className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-                Cuando te excedás en algo, te decimos <strong>exactamente qué meta</strong> estás sacrificando.
+                Cuando te excedas en algo, te decimos <strong>exactamente qué meta</strong> estás sacrificando.
               </li>
             </ul>
             <button
@@ -185,7 +185,7 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
           <section>
             <h2 className="text-xl font-semibold tracking-tight">Tu ingreso mensual</h2>
             <p className="mt-1 text-sm text-zinc-500">
-              Este es el dinero con el que trabajaremos cada mes. Podés ajustarlo cuando quieras.
+              Este es el dinero con el que trabajaremos cada mes. Puedes ajustarlo cuando quieras.
             </p>
 
             <div className="mt-6 flex flex-col gap-1">
@@ -238,7 +238,7 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
           <section>
             <h2 className="text-xl font-semibold tracking-tight">Distribución de pilares</h2>
             <p className="mt-1 text-sm text-zinc-500">
-              Definí cuánto de tu ingreso ({formatBs(incomeNumber)} Bs) va a cada pilar, en Bs. No
+              Define cuánto de tu ingreso ({formatBs(incomeNumber)} Bs) va a cada pilar, en Bs. No
               hace falta usarlo todo — lo que sobre queda como dinero libre.
             </p>
 
@@ -298,8 +298,13 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
           <section>
             <h2 className="text-xl font-semibold tracking-tight">Categorías iniciales</h2>
             <p className="mt-1 text-sm text-zinc-500">
-              Dentro de cada pilar podés crear categorías para organizar mejor tu dinero. Te
+              Dentro de cada pilar puedes crear categorías para organizar mejor tu dinero. Te
               damos algunas sugerencias para empezar.
+            </p>
+            <p className="mt-1 text-xs text-zinc-500">
+              Estas categorías nacen sin un monto fijo asignado. Si alguna es un gasto fijo (como
+              un alquiler o un servicio), le asignas su monto y frecuencia después, desde
+              &quot;Gastos fijos&quot; dentro de Mi Dinero.
             </p>
 
             <div className="mt-6 flex flex-col gap-6">

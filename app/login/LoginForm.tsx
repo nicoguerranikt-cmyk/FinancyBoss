@@ -67,9 +67,9 @@ export default function LoginForm() {
         </form>
 
         <p className="mt-6 text-center text-sm text-zinc-500">
-          ¿No tenés cuenta?{' '}
+          ¿No tienes cuenta?{' '}
           <Link href="/registro" className="font-medium text-zinc-900 underline dark:text-zinc-100">
-            Registrate
+            Regístrate
           </Link>
         </p>
       </div>

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { formatBs } from '@/lib/format'
-import { registerFreeMoneyMovement } from './actions'
+import { allocateFreeMoneyToCategory, registerFreeMoneyMovement } from './actions'
 
 type Movement = {
   id: string
@@ -11,6 +11,8 @@ type Movement = {
   date: string
   credit_month: number | null
 }
+
+type CategoryOption = { id: string; name: string; pillarLabel: string }
 
 const inputClass =
   'rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-brand dark:border-zinc-700 dark:focus:border-brand'
@@ -28,35 +30,64 @@ function groupByDate(movements: Movement[]): { date: string; items: Movement[] }
 export default function LibreClient({
   movements,
   todayIso,
+  availableAmount,
+  categoryOptions,
 }: {
   movements: Movement[]
   todayIso: string
+  // Total disponible hoy (acreditado + lo que sobra del mes en curso) —
+  // solo para mostrar de referencia en "Asignar a categoría", la
+  // validación real de que no te pasás la hace el server (ver migración
+  // 0028).
+  availableAmount: number
+  categoryOptions: CategoryOption[]
 }) {
-  const [type, setType] = useState<'gasto' | 'ingreso'>('gasto')
+  const [mode, setMode] = useState<'gasto' | 'ingreso' | 'asignar'>('gasto')
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
   const [date, setDate] = useState(todayIso)
+  const [categoryId, setCategoryId] = useState(categoryOptions[0]?.id ?? '')
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   const groups = useMemo(() => groupByDate(movements), [movements])
 
+  function handleModeChange(next: 'gasto' | 'ingreso' | 'asignar') {
+    setMode(next)
+    setError(null)
+    setSuccess(false)
+  }
+
   async function handleSubmit() {
     setError(null)
     setSuccess(false)
     const amountNumber = Number(amount)
     if (!(amountNumber > 0)) {
-      setError('Ingresá un monto mayor a 0.')
+      setError('Ingresa un monto mayor a 0.')
       return
     }
+
     setSubmitting(true)
-    const res = await registerFreeMoneyMovement({
-      type,
-      amount: amountNumber,
-      description: description.trim() || undefined,
-      date,
-    })
+    const res =
+      mode === 'asignar'
+        ? await (async () => {
+            if (!categoryId) {
+              return { error: 'Elige a qué categoría va.' }
+            }
+            return allocateFreeMoneyToCategory({
+              amount: amountNumber,
+              categoryId,
+              description: description.trim() || undefined,
+              date,
+            })
+          })()
+        : await registerFreeMoneyMovement({
+            type: mode,
+            amount: amountNumber,
+            description: description.trim() || undefined,
+            date,
+          })
     setSubmitting(false)
     if (res.error) {
       setError(res.error)
@@ -75,27 +106,40 @@ export default function LibreClient({
         <div className="mt-3 flex gap-2">
           <button
             type="button"
-            onClick={() => setType('gasto')}
+            onClick={() => handleModeChange('gasto')}
             className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${
-              type === 'gasto'
-                ? 'bg-brand text-white dark:text-zinc-950'
-                : 'border border-zinc-300 dark:border-zinc-700'
+              mode === 'gasto' ? 'bg-brand text-white dark:text-zinc-950' : 'border border-zinc-300 dark:border-zinc-700'
             }`}
           >
             Gasto
           </button>
           <button
             type="button"
-            onClick={() => setType('ingreso')}
+            onClick={() => handleModeChange('ingreso')}
             className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${
-              type === 'ingreso'
-                ? 'bg-brand text-white dark:text-zinc-950'
-                : 'border border-zinc-300 dark:border-zinc-700'
+              mode === 'ingreso' ? 'bg-brand text-white dark:text-zinc-950' : 'border border-zinc-300 dark:border-zinc-700'
             }`}
           >
             Ingreso
           </button>
+          <button
+            type="button"
+            onClick={() => handleModeChange('asignar')}
+            disabled={categoryOptions.length === 0}
+            className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors disabled:opacity-40 ${
+              mode === 'asignar' ? 'bg-brand text-white dark:text-zinc-950' : 'border border-zinc-300 dark:border-zinc-700'
+            }`}
+          >
+            Asignar
+          </button>
         </div>
+
+        {mode === 'asignar' && (
+          <p className="mt-3 text-xs text-zinc-500">
+            Manda parte de tus {formatBs(availableAmount)} Bs disponibles a una categoría puntual —
+            por ejemplo, un gasto fijo nuevo o una meta de ahorro. Queda como un ingreso normal ahí.
+          </p>
+        )}
 
         <div className="mt-3 flex flex-col gap-3">
           <div className="flex flex-col gap-1">
@@ -113,6 +157,27 @@ export default function LibreClient({
               className={inputClass}
             />
           </div>
+
+          {mode === 'asignar' && (
+            <div className="flex flex-col gap-1">
+              <label htmlFor="libre-category" className="text-sm font-medium">
+                Categoría destino
+              </label>
+              <select
+                id="libre-category"
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+                className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none [color-scheme:light] focus:border-brand dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:[color-scheme:dark] dark:focus:border-brand"
+              >
+                {categoryOptions.map((c) => (
+                  <option key={c.id} value={c.id} className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
+                    {c.pillarLabel} — {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div className="flex flex-col gap-1">
             <label htmlFor="libre-date" className="text-sm font-medium">
               Fecha
@@ -146,7 +211,9 @@ export default function LibreClient({
           </p>
         )}
         {success && !error && (
-          <p className="mt-3 text-sm text-green-700 dark:text-green-400">Movimiento registrado.</p>
+          <p className="mt-3 text-sm text-green-700 dark:text-green-400">
+            {mode === 'asignar' ? 'Asignado.' : 'Movimiento registrado.'}
+          </p>
         )}
 
         <button
@@ -155,7 +222,7 @@ export default function LibreClient({
           disabled={submitting}
           className="mt-4 w-full rounded-lg bg-brand py-2.5 font-medium text-white transition-colors hover:bg-brand/90 disabled:opacity-50 dark:text-zinc-950"
         >
-          {submitting ? 'Guardando…' : 'Registrar'}
+          {submitting ? 'Guardando…' : mode === 'asignar' ? 'Asignar' : 'Registrar'}
         </button>
       </div>
 

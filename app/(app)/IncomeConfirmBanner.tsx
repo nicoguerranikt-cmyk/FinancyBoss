@@ -23,7 +23,7 @@ export default function IncomeConfirmBanner({ name, baseIncome }: { name: string
   async function handleConfirm() {
     const baseIncomeNumber = Number(amount) || 0
     if (!(baseIncomeNumber > 0)) {
-      setError('Ingresá un monto mayor a 0.')
+      setError('Ingresa un monto mayor a 0.')
       return
     }
 
@@ -42,7 +42,7 @@ export default function IncomeConfirmBanner({ name, baseIncome }: { name: string
 
   return (
     <div className="flex flex-col gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
-      <span>Confirmá tu ingreso de este mes (no se repite solo).</span>
+      <span>Confirma tu ingreso de este mes (no se repite solo).</span>
       <div className="flex items-center gap-2">
         <input
           type="number"

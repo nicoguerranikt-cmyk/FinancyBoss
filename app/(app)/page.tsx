@@ -181,6 +181,11 @@ export default async function DashboardPage() {
     getCarriedOverByPillarId(supabase, userId, today.year, today.month),
     supabase.from('free_money_transactions').select('amount').eq('user_id', userId),
   ])
+  // Dinero libre que se ve en el Dashboard: lo ya acreditado de meses
+  // cerrados/movimientos a mano (free_money_transactions) MÁS lo que sobra
+  // del mes en curso todavía sin cerrar (dashboard.freeMoney, calculado más
+  // abajo) — es líquido real disponible AHORA, no algo que recién aparece
+  // cuando termina el mes.
   const freeMoneyAccumulated = (freeMoneyRows ?? []).reduce((sum, r) => sum + r.amount, 0)
 
   const ahorroPillarId = pillars?.find((p) => p.name === 'ahorro')?.id ?? ''
@@ -233,7 +238,7 @@ export default async function DashboardPage() {
       <PageReadySignal />
       {/* Presupuesto diario disponible: el número más importante de la app. */}
       <section className="text-center">
-        <p className="text-sm text-zinc-500">Podés gastar hoy</p>
+        <p className="text-sm text-zinc-500">Puedes gastar hoy</p>
         <p
           className={`mt-1 text-5xl font-semibold tracking-tight tabular-nums ${
             dashboard.isDeficit ? 'text-red-600' : ''
@@ -273,13 +278,15 @@ export default async function DashboardPage() {
       </section>
 
       {/* Dinero libre (migración 0021): plata sin destino fijo, ver detalle
-          e historial en /mi-dinero/libre. */}
+          e historial en /mi-dinero/libre. Acumulado de meses cerrados +
+          movimientos a mano, MÁS lo que sobra del mes en curso (ver arriba)
+          — disponible ahora, no recién al cerrar el mes. */}
       <Link
         href="/mi-dinero/libre"
         className="flex items-center justify-between rounded-xl border-l-4 border-brand-violet bg-brand-violet/10 p-3 transition-colors hover:brightness-95 dark:hover:brightness-110"
       >
         <p className="text-sm font-medium">Dinero libre</p>
-        <p className="text-sm font-semibold text-brand-violet">{formatBs(freeMoneyAccumulated)} Bs →</p>
+        <p className="text-sm font-semibold text-brand-violet">{formatBs(freeMoneyAccumulated + dashboard.freeMoney)} Bs →</p>
       </Link>
 
       {needsIncomeConfirmation && (
@@ -291,7 +298,7 @@ export default async function DashboardPage() {
           href="/deudas"
           className="rounded-lg bg-amber-50 px-3 py-2 text-center text-sm text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-400 dark:hover:bg-amber-950/60"
         >
-          Tenés {pendingAutoPayCount} pago{pendingAutoPayCount > 1 ? 's' : ''} de deuda pendiente
+          Tienes {pendingAutoPayCount} pago{pendingAutoPayCount > 1 ? 's' : ''} de deuda pendiente
           {pendingAutoPayCount > 1 ? 's' : ''} de confirmar. Ver Deudas →
         </Link>
       )}
