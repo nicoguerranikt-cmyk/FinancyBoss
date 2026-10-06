@@ -4,9 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { todayIn } from '@/lib/dashboard'
 import { getUserTimeZone } from '@/lib/userTimezone.server'
-import { applyCollection } from '@/lib/debtors'
-import { EPSILON } from '@/lib/domino'
-import { validatePillarSource } from '@/lib/pillarSource'
+import { userFacingRpcError } from '@/lib/rpcError'
 
 export type CreateDebtorInput = {
   name: string
@@ -76,61 +74,27 @@ export async function registerCollection(input: RegisterCollectionInput): Promis
   } = await supabase.auth.getUser()
   if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
-  const { data: debtor } = await supabase
-    .from('debtors')
-    .select('id, remaining_amount, status')
-    .eq('id', input.debtorId)
-    .eq('user_id', user.id)
-    .maybeSingle()
-  if (!debtor) return { error: 'Deudor inválido.' }
-  if (debtor.status !== 'pending') return { error: 'Este registro ya no está pendiente.' }
-  // manual §11: "Un deudor paga más de lo que debe → el sistema no acepta
-  // un pago mayor al saldo pendiente. Muestra error."
-  if (input.amount > debtor.remaining_amount + EPSILON) {
-    return { error: 'El cobro no puede ser mayor al saldo pendiente.' }
-  }
-
-  const source = await validatePillarSource(supabase, user.id, input.pillarId, input.categoryId)
-  if (source.error) return { error: source.error }
-
-  const { remainingAmount, status } = applyCollection(debtor, input.amount)
+  // El cobro y la baja del saldo del deudor corren juntos en una función de la
+  // base (migración 0038): los dos o ninguno, y dos cobros simultáneos del
+  // mismo deudor se atienden de a uno. La función también aplica manual §11
+  // ("el sistema no acepta un cobro mayor al saldo pendiente").
   const timeZone = await getUserTimeZone(supabase, user.id)
-
-  const { error } = await supabase.from('transactions').insert({
-    user_id: user.id,
-    pillar_id: source.pillarId,
-    category_id: source.categoryId,
-    debtor_id: debtor.id,
-    amount: input.amount,
-    type: 'extra_income' as const,
-    description: null,
-    date: todayIn(timeZone).iso,
+  const { error } = await supabase.rpc('register_debtor_collection', {
+    p_debtor_id: input.debtorId,
+    p_amount: input.amount,
+    p_pillar_id: input.pillarId,
+    p_category_id: input.categoryId ?? null,
+    p_date: todayIn(timeZone).iso,
   })
   if (error) {
-    console.error('[registerCollection] transactions insert error:', {
+    console.error('[registerCollection] rpc error:', {
       message: error.message,
       details: error.details,
       hint: error.hint,
       code: error.code,
       input,
     })
-    return { error: 'No pudimos registrar el cobro. Prueba de nuevo.' }
-  }
-
-  const { error: updateError } = await supabase
-    .from('debtors')
-    .update({ remaining_amount: remainingAmount, status })
-    .eq('id', debtor.id)
-    .eq('user_id', user.id)
-  if (updateError) {
-    console.error('[registerCollection] debtors update error:', {
-      message: updateError.message,
-      details: updateError.details,
-      hint: updateError.hint,
-      code: updateError.code,
-      input,
-    })
-    return { error: 'No pudimos actualizar el registro. Prueba de nuevo.' }
+    return { error: userFacingRpcError(error, 'No pudimos registrar el cobro. Prueba de nuevo.') }
   }
 
   revalidatePath('/deudores')

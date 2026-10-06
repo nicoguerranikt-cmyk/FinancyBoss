@@ -57,6 +57,9 @@ export async function getCarriedOverByPillarId(
   return result
 }
 
+// Cierra UN mes. Devuelve false si no se pudo (alguna lectura falló o no se
+// pudo guardar): el que llama deja de cerrar y el mes queda pendiente para el
+// próximo intento — nunca se cierra con datos incompletos.
 async function closeOneMonth(
   supabase: SupabaseClient,
   userId: string,
@@ -64,33 +67,64 @@ async function closeOneMonth(
   month: number,
   baseIncome: number,
   timeZone: string
-): Promise<void> {
+): Promise<boolean> {
   const { start, end } = monthRangeFor(year, month)
   const { startUtc, endUtc } = monthRangeUtcInstantFor(year, month, timeZone)
 
-  const [{ data: pillars }, { data: categories }, { data: transactions }, { data: dominoEvents }, carriedOverByPillarId] =
-    await Promise.all([
-      supabase.from('pillars').select('id, name, monthly_amount').eq('user_id', userId),
-      supabase
-        .from('categories')
-        .select(
-          'id, pillar_id, fixed_amount, auto_repeat, fixed_start_date, fixed_interval_unit, fixed_interval_count, fixed_reserve_ahead'
-        )
-        .eq('user_id', userId),
-      supabase
-        .from('transactions')
-        .select('pillar_id, category_id, amount, is_allocation')
-        .eq('user_id', userId)
-        .gte('date', start)
-        .lte('date', end),
-      supabase
-        .from('domino_events')
-        .select('source_category_id, affected_category_id, debt_id, amount')
-        .eq('user_id', userId)
-        .gte('created_at', startUtc)
-        .lt('created_at', endUtc),
-      getCarriedOverByPillarId(supabase, userId, year, month),
-    ])
+  const prev = month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 }
+
+  const [
+    { data: pillars, error: pillarsError },
+    { data: categories, error: categoriesError },
+    { data: transactions, error: transactionsError },
+    { data: dominoEvents, error: dominoError },
+    { data: carriedRows, error: carriedError },
+  ] = await Promise.all([
+    supabase.from('pillars').select('id, name, monthly_amount').eq('user_id', userId),
+    supabase
+      .from('categories')
+      .select(
+        'id, pillar_id, fixed_amount, auto_repeat, fixed_start_date, fixed_interval_unit, fixed_interval_count, fixed_reserve_ahead'
+      )
+      .eq('user_id', userId),
+    supabase
+      .from('transactions')
+      .select('pillar_id, category_id, amount, is_allocation')
+      .eq('user_id', userId)
+      .gte('date', start)
+      .lte('date', end),
+    supabase
+      .from('domino_events')
+      .select('source_category_id, affected_category_id, debt_id, amount')
+      .eq('user_id', userId)
+      .gte('created_at', startUtc)
+      .lt('created_at', endUtc),
+    supabase
+      .from('monthly_budgets')
+      .select('pillar_id, budgeted_amount, carried_over, spent_amount')
+      .eq('user_id', userId)
+      .is('category_id', null)
+      .eq('year', prev.year)
+      .eq('month', prev.month),
+  ])
+
+  // Una lectura con error NO es "no hay datos": cerrar con eso guardaría un
+  // mes con cifras incompletas para siempre. Se aborta y se reintenta después.
+  const readError = pillarsError ?? categoriesError ?? transactionsError ?? dominoError ?? carriedError
+  if (readError) {
+    console.error('[closeOneMonth] read error, month not closed:', {
+      message: readError.message,
+      code: readError.code,
+      year,
+      month,
+    })
+    return false
+  }
+
+  const carriedOverByPillarId: Record<string, number> = {}
+  for (const row of carriedRows ?? []) {
+    carriedOverByPillarId[row.pillar_id] = row.budgeted_amount + row.carried_over - row.spent_amount
+  }
 
   const typedPillars: PillarRow[] = pillars ?? []
   const ahorroPillarId = typedPillars.find((p) => p.name === 'ahorro')?.id ?? ''
@@ -128,25 +162,30 @@ async function closeOneMonth(
   })
 
   const rows = dashboard.pillars.map((p) => ({
-    user_id: userId,
     pillar_id: p.id,
-    category_id: null,
-    month,
-    year,
     budgeted_amount: p.budget,
     carried_over: p.carriedOver,
     spent_amount: p.budget + p.carriedOver - p.saldo,
-    // El ingreso con el que se cerró este mes: Estadísticas lo lee para que
-    // cambiar el sueldo después no altere un mes que ya terminó (migración 0036).
-    income_amount: baseIncome,
   }))
-  if (rows.length === 0) return
+  if (rows.length === 0) return true
 
-  const { error } = await supabase.from('monthly_budgets').insert(rows)
-  if (error && error.code !== '23505') {
-    // 23505 = ya lo cerró otra carga de página en simultáneo — no es un
-    // error real, solo una carrera benigna.
-    console.error('[closeOneMonth] insert error:', {
+  // El resumen de los pilares, el ingreso del mes (migración 0036) y el
+  // sobrante a Dinero libre (migración 0021: lo que sobró de ingreso menos los
+  // 3 montos de pilares, ver computeDashboard) se guardan JUNTOS en una
+  // función de la base (migración 0038): se hace todo o nada. Antes eran dos
+  // pedidos, y si fallaba el segundo el mes quedaba cerrado sin su sobrante y
+  // el siguiente cierre ya no lo recuperaba. Es idempotente: si otra carga de
+  // página ya cerró este mes, no duplica nada.
+  const { error } = await supabase.rpc('save_month_close', {
+    p_year: year,
+    p_month: month,
+    p_income: baseIncome,
+    p_rows: rows,
+    p_free_money: dashboard.freeMoney,
+    p_end: end,
+  })
+  if (error) {
+    console.error('[closeOneMonth] save error, month not closed:', {
       message: error.message,
       details: error.details,
       hint: error.hint,
@@ -154,32 +193,9 @@ async function closeOneMonth(
       year,
       month,
     })
+    return false
   }
-
-  // Dinero libre (migración 0021): lo que sobró este mes (ingreso menos los
-  // 3 montos de pilares, ver computeDashboard) queda acreditado para siempre
-  // — mismo criterio de "aritmética sobre un mes que ya terminó" que el
-  // arrastre de saldo de arriba. Si sobró 0, no hace falta ninguna fila.
-  if (dashboard.freeMoney > 0) {
-    const { error: freeMoneyError } = await supabase.from('free_money_transactions').insert({
-      user_id: userId,
-      amount: dashboard.freeMoney,
-      description: 'Sobrante del mes',
-      date: end,
-      credit_month: month,
-      credit_year: year,
-    })
-    if (freeMoneyError && freeMoneyError.code !== '23505') {
-      console.error('[closeOneMonth] free money insert error:', {
-        message: freeMoneyError.message,
-        details: freeMoneyError.details,
-        hint: freeMoneyError.hint,
-        code: freeMoneyError.code,
-        year,
-        month,
-      })
-    }
-  }
+  return true
 }
 
 // Al cruzar a un mes nuevo, una deuda/deudor ya "pagado" pasa solo a
@@ -224,7 +240,10 @@ export async function closeElapsedMonths(supabase: SupabaseClient, userId: strin
   let closedAny = false
 
   while (cursor.year < today.year || (cursor.year === today.year && cursor.month < today.month)) {
-    await closeOneMonth(supabase, userId, cursor.year, cursor.month, profile.base_income, timeZone)
+    const closed = await closeOneMonth(supabase, userId, cursor.year, cursor.month, profile.base_income, timeZone)
+    // Si un mes no se pudo cerrar, no se salta al siguiente: cada mes usa el
+    // arrastre del anterior. Queda pendiente para la próxima carga.
+    if (!closed) break
     closedAny = true
     cursor = nextMonth(cursor.year, cursor.month)
   }

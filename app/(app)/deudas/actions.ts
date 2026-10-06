@@ -4,14 +4,9 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { todayIn } from '@/lib/dashboard'
 import { getUserTimeZone } from '@/lib/userTimezone.server'
-import {
-  applyDebtPayment,
-  lastDueOccurrence,
-  validateAutoPayFrequency,
-  type AutoPayInterval,
-} from '@/lib/debts'
-import { EPSILON } from '@/lib/domino'
+import { lastDueOccurrence, validateAutoPayFrequency, type AutoPayInterval } from '@/lib/debts'
 import { validatePillarSource } from '@/lib/pillarSource'
+import { userFacingRpcError } from '@/lib/rpcError'
 
 export type AutoPayInput = {
   amount: number
@@ -166,59 +161,27 @@ export async function registerPayment(input: RegisterPaymentInput): Promise<{ er
   } = await supabase.auth.getUser()
   if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
-  const { data: debt } = await supabase
-    .from('debts')
-    .select('id, remaining_amount, status')
-    .eq('id', input.debtId)
-    .eq('user_id', user.id)
-    .maybeSingle()
-  if (!debt) return { error: 'Deuda inválida.' }
-  if (debt.status === 'paid') return { error: 'Esta deuda ya está saldada.' }
-  if (input.amount > debt.remaining_amount + EPSILON) {
-    return { error: 'El pago no puede ser mayor al saldo pendiente.' }
-  }
-
-  const source = await validatePillarSource(supabase, user.id, input.pillarId, input.categoryId)
-  if (source.error) return { error: source.error }
-
-  const { remainingAmount, status } = applyDebtPayment(debt, input.amount)
+  // El pago y la baja del saldo de la deuda corren juntos en una función de
+  // la base (migración 0038): se hacen los dos o ninguno, y dos pagos
+  // simultáneos de la misma deuda se atienden de a uno. Antes eran dos pedidos
+  // separados, y un fallo entre ambos dejaba un pago sin descontar.
   const timeZone = await getUserTimeZone(supabase, user.id)
-
-  const { error } = await supabase.from('transactions').insert({
-    user_id: user.id,
-    pillar_id: source.pillarId,
-    category_id: source.categoryId,
-    debt_id: debt.id,
-    amount: -input.amount,
-    type: 'expense' as const,
-    description: null,
-    date: todayIn(timeZone).iso,
+  const { error } = await supabase.rpc('register_debt_payment', {
+    p_debt_id: input.debtId,
+    p_amount: input.amount,
+    p_pillar_id: input.pillarId,
+    p_category_id: input.categoryId ?? null,
+    p_date: todayIn(timeZone).iso,
   })
   if (error) {
-    console.error('[registerPayment] transactions insert error:', {
+    console.error('[registerPayment] rpc error:', {
       message: error.message,
       details: error.details,
       hint: error.hint,
       code: error.code,
       input,
     })
-    return { error: 'No pudimos registrar el pago. Prueba de nuevo.' }
-  }
-
-  const { error: updateError } = await supabase
-    .from('debts')
-    .update({ remaining_amount: remainingAmount, status })
-    .eq('id', debt.id)
-    .eq('user_id', user.id)
-  if (updateError) {
-    console.error('[registerPayment] debts update error:', {
-      message: updateError.message,
-      details: updateError.details,
-      hint: updateError.hint,
-      code: updateError.code,
-      input,
-    })
-    return { error: 'No pudimos actualizar la deuda. Prueba de nuevo.' }
+    return { error: userFacingRpcError(error, 'No pudimos registrar el pago. Prueba de nuevo.') }
   }
 
   revalidatePath('/deudas')
@@ -253,55 +216,27 @@ export async function confirmAutoPayment(input: { debtId: string }): Promise<{ e
   const dueDate = debt.auto_pay_pillar_id ? lastDueOccurrence(debt, today) : null
   if (!dueDate) return { error: 'Todavía no te toca confirmar esta cuota.' }
 
-  // limit(1) y no maybeSingle(): con más de una fila que coincida,
-  // maybeSingle() da error, existing queda vacío y se dejaría pasar un pago
-  // duplicado.
-  const { data: existing } = await supabase
-    .from('transactions')
-    .select('id')
-    .eq('debt_id', debt.id)
-    .gte('date', dueDate)
-    .limit(1)
-  if (existing && existing.length > 0) return { error: 'Ya confirmaste esta cuota.' }
-
+  // Todo adentro de la función (migración 0038): "ya confirmaste esta cuota"
+  // se comprueba con la deuda bloqueada, así un doble clic no registra dos
+  // cuotas, y el pago y la baja del saldo se hacen juntos o no se hacen.
   const amount = Math.min(debt.auto_pay_amount as number, debt.remaining_amount)
-  const { remainingAmount, status } = applyDebtPayment(debt, amount)
-
-  const { error } = await supabase.from('transactions').insert({
-    user_id: user.id,
-    pillar_id: debt.auto_pay_pillar_id,
-    category_id: debt.auto_pay_category_id,
-    debt_id: debt.id,
-    amount: -amount,
-    type: 'expense' as const,
-    description: null,
-    date: today.iso,
+  const { error } = await supabase.rpc('register_debt_payment', {
+    p_debt_id: debt.id,
+    p_amount: amount,
+    p_pillar_id: debt.auto_pay_pillar_id,
+    p_category_id: debt.auto_pay_category_id,
+    p_date: today.iso,
+    p_dedupe_since: dueDate,
   })
   if (error) {
-    console.error('[confirmAutoPayment] transactions insert error:', {
+    console.error('[confirmAutoPayment] rpc error:', {
       message: error.message,
       details: error.details,
       hint: error.hint,
       code: error.code,
       input,
     })
-    return { error: 'No pudimos registrar el pago. Prueba de nuevo.' }
-  }
-
-  const { error: updateError } = await supabase
-    .from('debts')
-    .update({ remaining_amount: remainingAmount, status })
-    .eq('id', debt.id)
-    .eq('user_id', user.id)
-  if (updateError) {
-    console.error('[confirmAutoPayment] debts update error:', {
-      message: updateError.message,
-      details: updateError.details,
-      hint: updateError.hint,
-      code: updateError.code,
-      input,
-    })
-    return { error: 'No pudimos actualizar la deuda. Prueba de nuevo.' }
+    return { error: userFacingRpcError(error, 'No pudimos registrar el pago. Prueba de nuevo.') }
   }
 
   revalidatePath('/deudas')

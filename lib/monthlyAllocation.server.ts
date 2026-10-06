@@ -120,5 +120,24 @@ export async function ensureMonthlyAllocation(
   }
 
   if (rowsToInsert.length === 0) return
-  await supabase.from('transactions').insert(rowsToInsert)
+
+  // Se guarda con una función de la base (migración 0038) que bloquea por
+  // usuario y vuelve a comprobar que no exista el reparto: si la primera carga
+  // del mes llega desde dos pestañas a la vez, la segunda espera y no
+  // duplica. Antes era "consultar si existe" y después "insertar", y dos
+  // pedidos simultáneos podían pasar los dos la consulta.
+  const { error } = await supabase.rpc('ensure_monthly_allocation', {
+    p_rows: rowsToInsert.map((r) => ({ pillar_id: r.pillar_id, category_id: r.category_id, amount: r.amount })),
+    p_month_start: start,
+    p_month_end: end,
+    p_date: today.iso,
+  })
+  if (error) {
+    console.error('[ensureMonthlyAllocation] rpc error:', {
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+    })
+  }
 }

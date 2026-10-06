@@ -11,21 +11,9 @@ import {
 
 export type { DateYMD }
 
-export type DebtStateRow = { remaining_amount: number }
-export type AppliedPayment = { remainingAmount: number; status: 'active' | 'paid' }
-
-const EPSILON = 0.005
-
-// Aplica un pago de `amount` contra remaining_amount y decide si la deuda
-// queda saldada (manual §6.5: "se marca como saldada automáticamente"). No
-// valida amount <= remaining_amount: esa regla de negocio (con su mensaje
-// de error) vive en la action que llama a esto.
-export function applyDebtPayment(debt: DebtStateRow, amount: number): AppliedPayment {
-  const raw = Math.round((debt.remaining_amount - amount) * 100) / 100
-  const remainingAmount = Math.max(0, raw)
-  const status: AppliedPayment['status'] = remainingAmount <= EPSILON ? 'paid' : 'active'
-  return { remainingAmount: status === 'paid' ? 0 : remainingAmount, status }
-}
+// Registrar un pago (bajar remaining_amount y marcar la deuda como saldada al
+// llegar a 0, manual §6.5) vive en la función de Postgres register_debt_payment
+// (migración 0038): el movimiento y el saldo se actualizan juntos, atómicamente.
 
 // Plan de pago automático (manual §6.2): es un RECORDATORIO, no descuenta
 // solo — el usuario confirma con un botón ("Ya la pagué"). Nunca hay que

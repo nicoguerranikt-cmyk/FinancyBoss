@@ -192,6 +192,7 @@ La pantalla de Configuración aclara esta distinción con un texto debajo del ca
 ### 3.3 Acumulación de saldos entre meses
 
 - Los saldos no utilizados de **todos los pilares** (Ahorro, Gasto e Inversión) se acumulan al mes siguiente.
+- **El cierre de un mes es todo o nada** (`save_month_close`, migración 0038): el resumen de los pilares, el ingreso del mes y el sobrante acreditado a Dinero libre se guardan juntos. Si alguna lectura falla o no se puede guardar, el mes no se cierra y queda pendiente para la próxima carga; nunca se cierra con datos incompletos. Dos cargas simultáneas no duplican el cierre.
 - ⚠️ *Nota de riesgo:* que Gasto acumule puede hacer crecer indefinidamente el presupuesto de gastos si el usuario es muy frugal. A monitorear con usuarios reales en Fase 1.
 
 ### 3.4 Distribución del ingreso
@@ -419,6 +420,8 @@ nunca automáticamente por el solo hecho de que la deuda exista.
 | Monto total | Número en Bs |
 
 ### 6.2 Registrar un pago
+
+Un pago (y el cobro a un deudor, §7) se guarda de forma **atómica**: el movimiento y la baja del saldo de la deuda corren juntos en una función de la base (`register_debt_payment` / `register_debtor_collection`, migración 0038). Se hacen los dos o ninguno, y dos pagos simultáneos de la misma deuda se atienden de a uno, así que un fallo a mitad de camino nunca deja un pago registrado sin descontar ni lo duplica al reintentar.
 
 Dos formas de registrar un pago contra una deuda (no son excluyentes), y en
 ambas el usuario elige **un pilar específico + una categoría opcional**
