@@ -16,7 +16,13 @@ import {
 } from '@/lib/dashboard'
 import { lastDueOccurrence } from '@/lib/debts'
 import { computeDominoPillarAdjustments } from '@/lib/domino'
-import { isFixedExpenseScheduled, lastFixedExpenseOccurrence, monthlyReserveAmount } from '@/lib/fixedExpense'
+import {
+  isFixedExpensePending,
+  isFixedExpenseScheduled,
+  lastFixedExpenseOccurrence,
+  lastFixedExpensePaymentDate,
+  monthlyReserveAmount,
+} from '@/lib/fixedExpense'
 import { formatBs } from '@/lib/format'
 import { closeElapsedMonths, getCarriedOverByPillarId } from '@/lib/monthClose'
 import { ensureMonthlyAllocation } from '@/lib/monthlyAllocation.server'
@@ -58,12 +64,13 @@ export default async function DashboardPage() {
     )
     .eq('user_id', userId)
 
-  // Gastos fijos con auto_repeat: si la fecha configurada ya llegó y
-  // todavía no hay una transacción para esa cuota, se genera acá mismo (no
-  // hay infraestructura de cron en el proyecto). Perezoso e idempotente: se
-  // revisa en cada carga del Dashboard. Se fecha en la fecha real del
-  // vencimiento (no "hoy"), para que quede prolijo aunque el usuario no
-  // haya abierto la app justo ese día.
+  // Gastos fijos con auto_repeat: si la fecha configurada ya llegó, es un
+  // RECORDATORIO — mismo criterio que el plan de pago automático de Deudas
+  // (ver pendingAutoPayCount más abajo): nunca se descuenta solo por haber
+  // llegado la fecha ("no asumir movimientos de plata"). El usuario confirma
+  // desde Mi Dinero → esa categoría, con el botón "Ya lo pagué"
+  // (confirmFixedExpense, mi-dinero/actions.ts). Acá solo contamos cuántos
+  // están pendientes de confirmar, para el aviso de abajo.
   const autoFixed = (categories ?? []).filter(
     (c) => !c.deleted_at && c.auto_repeat && isFixedExpenseScheduled(c)
   )
@@ -73,37 +80,18 @@ export default async function DashboardPage() {
     if (due) dueOccurrenceByCategoryId[c.id] = due
   }
   const dueCategoryIds = Object.keys(dueOccurrenceByCategoryId)
+
+  let pendingFixedExpenseCount = 0
   if (dueCategoryIds.length > 0) {
     const { data: existing } = await supabase
       .from('transactions')
-      .select('category_id, date')
+      .select('category_id, amount, date')
       .eq('user_id', userId)
       .in('category_id', dueCategoryIds)
-    const lastGeneratedByCategoryId: Record<string, string> = {}
-    for (const tx of existing ?? []) {
-      if (!tx.category_id) continue
-      if (!lastGeneratedByCategoryId[tx.category_id] || tx.date > lastGeneratedByCategoryId[tx.category_id]) {
-        lastGeneratedByCategoryId[tx.category_id] = tx.date
-      }
-    }
-    const faltantes = autoFixed.filter((c) => {
-      const due = dueOccurrenceByCategoryId[c.id]
-      const last = lastGeneratedByCategoryId[c.id]
-      return !last || last < due
-    })
-    if (faltantes.length > 0) {
-      await supabase.from('transactions').insert(
-        faltantes.map((c) => ({
-          user_id: userId,
-          pillar_id: c.pillar_id,
-          category_id: c.id,
-          amount: -(c.fixed_amount as number),
-          type: 'expense' as const,
-          description: null,
-          date: dueOccurrenceByCategoryId[c.id],
-        }))
-      )
-    }
+    pendingFixedExpenseCount = dueCategoryIds.filter((id) => {
+      const categoryTx = (existing ?? []).filter((tx) => tx.category_id === id)
+      return isFixedExpensePending(dueOccurrenceByCategoryId[id], lastFixedExpensePaymentDate(categoryTx))
+    }).length
   }
 
   // Reparto mensual real por categoría (manual.md — ver migración 0015):
@@ -300,6 +288,17 @@ export default async function DashboardPage() {
         >
           Tienes {pendingAutoPayCount} pago{pendingAutoPayCount > 1 ? 's' : ''} de deuda pendiente
           {pendingAutoPayCount > 1 ? 's' : ''} de confirmar. Ver Deudas →
+        </Link>
+      )}
+
+      {pendingFixedExpenseCount > 0 && (
+        <Link
+          href={`/mi-dinero/${gastoPillarId}/fijos`}
+          className="rounded-lg bg-amber-50 px-3 py-2 text-center text-sm text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-400 dark:hover:bg-amber-950/60"
+        >
+          Tienes {pendingFixedExpenseCount} gasto{pendingFixedExpenseCount > 1 ? 's' : ''} fijo
+          {pendingFixedExpenseCount > 1 ? 's' : ''} pendiente{pendingFixedExpenseCount > 1 ? 's' : ''} de confirmar.
+          Ver Gastos fijos →
         </Link>
       )}
 

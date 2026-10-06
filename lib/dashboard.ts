@@ -7,8 +7,7 @@ export type PillarName = 'ahorro' | 'gasto' | 'inversion'
 export type PillarRow = { id: string; name: PillarName; monthly_amount: number }
 // date es opcional: computeDashboard no la usa, pero actions.ts la necesita
 // para separar "transacciones de antes de hoy" de "hasta hoy" (Caso 1).
-// is_allocation es opcional (transacciones viejas no lo tienen): un depósito
-// del reparto mensual (ver lib/monthlyAllocation.server.ts) ya está contado
+// is_allocation: un depósito del reparto mensual (ver lib/monthlyAllocation.server.ts) ya está contado
 // en `budget` más abajo, así que se excluye de "movimientos" para no sumarlo
 // dos veces. Un gasto fijo (categories.fixed_amount) NO tiene este mismo
 // trato: su transacción se genera sola, en su fecha (ver el bloque
@@ -20,7 +19,9 @@ export type TransactionRow = {
   category_id: string | null
   amount: number
   date?: string
-  is_allocation?: boolean
+  // Obligatorio a propósito: si una consulta se olvida de traerlo, el reparto
+  // del mes se contaría como plata nueva y el saldo quedaría inflado.
+  is_allocation: boolean
 }
 
 const BOLIVIA_TZ = 'America/La_Paz'

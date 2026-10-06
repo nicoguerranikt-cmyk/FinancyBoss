@@ -2,8 +2,9 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import type { PillarName } from '@/lib/dashboard'
+import { todayInBolivia, type PillarName } from '@/lib/dashboard'
 import { EPSILON } from '@/lib/domino'
+import { isFixedExpenseScheduled, lastFixedExpenseOccurrence } from '@/lib/fixedExpense'
 import { validateRecurrenceSchedule, type RecurrenceUnit } from '@/lib/recurrence'
 
 const PILLAR_NAMES: PillarName[] = ['ahorro', 'gasto', 'inversion']
@@ -574,18 +575,115 @@ export async function registerInvestmentReturn(input: {
   return {}
 }
 
+// Confirma la cuota de este mes de un gasto fijo con descuento automático
+// (manual §4.2/§5.5): es un RECORDATORIO, igual que el plan de pago
+// automático de Deudas (ver confirmAutoPayment en app/(app)/deudas/actions.ts)
+// — nunca se descuenta solo por haber llegado la fecha. Recién acá, cuando
+// el usuario toca "Ya lo pagué", se registra el gasto de verdad. Se fecha en
+// la fecha real del vencimiento (no "hoy"), para que el historial quede
+// prolijo aunque el usuario confirme unos días después.
+export async function confirmFixedExpense(input: { categoryId: string }): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
+
+  const { data: category } = await supabase
+    .from('categories')
+    .select(
+      'id, pillar_id, fixed_amount, auto_repeat, fixed_start_date, fixed_interval_unit, fixed_interval_count'
+    )
+    .eq('id', input.categoryId)
+    .eq('user_id', user.id)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (!category) return { error: 'Categoría inválida.' }
+
+  const { data: pillar } = await supabase
+    .from('pillars')
+    .select('name')
+    .eq('id', category.pillar_id)
+    .eq('user_id', user.id)
+    .maybeSingle()
+  if (!pillar || pillar.name !== 'gasto') {
+    return { error: 'Esto solo aplica a categorías del pilar Gasto.' }
+  }
+
+  // No confiamos en que el cliente solo muestre el botón cuando corresponde.
+  if (!category.auto_repeat || !isFixedExpenseScheduled(category) || category.fixed_amount === null) {
+    return { error: 'Esta categoría no tiene un plan automático.' }
+  }
+  const dueDate = lastFixedExpenseOccurrence(category, todayInBolivia())
+  if (!dueDate) return { error: 'Todavía no te toca confirmar este gasto.' }
+
+  // Solo un gasto (amount < 0) cuenta como "ya pagado": un reparto o ingreso
+  // extra posterior al vencimiento no. Se usa limit(1) y no maybeSingle():
+  // con más de una fila que coincida, maybeSingle() da error y existing
+  // quedaría vacío, dejando pasar un pago duplicado.
+  const { data: existing } = await supabase
+    .from('transactions')
+    .select('id')
+    .eq('category_id', category.id)
+    .eq('user_id', user.id)
+    .lt('amount', 0)
+    .gte('date', dueDate)
+    .limit(1)
+  if (existing && existing.length > 0) return { error: 'Ya confirmaste este gasto.' }
+
+  const { error } = await supabase.from('transactions').insert({
+    user_id: user.id,
+    pillar_id: category.pillar_id,
+    category_id: category.id,
+    amount: -(category.fixed_amount as number),
+    type: 'expense',
+    description: null,
+    date: dueDate,
+  })
+  if (error) {
+    console.error('[confirmFixedExpense] insert error:', {
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+      input,
+    })
+    return { error: 'No pudimos registrar el pago. Prueba de nuevo.' }
+  }
+
+  revalidatePath('/mi-dinero')
+  revalidatePath('/mi-dinero/[pillarId]', 'page')
+  revalidatePath('/mi-dinero/[pillarId]/fijos', 'page')
+  revalidatePath('/mi-dinero/[pillarId]/[categoryId]', 'page')
+  revalidatePath('/')
+  return {}
+}
+
 // Aumentar el presupuesto de un gasto fijo por este mes puntual (sin tocar
 // su monto fijo permanente, que sigue igual el mes que viene). Existe
 // porque "ingreso extra" ya NO puede apuntar a Gasto (Gasto solo registra
 // gastos) — esta es la única vía para meterle más presupuesto a una
 // categoría de Gasto, y por eso vive acá, acotada a gastos fijos
 // puntuales, en vez de ser un destino más en el formulario genérico.
+//
+// La plata tiene que salir de algún lado real, elegido a propósito por el
+// usuario — nunca se fabrica sola (migración 0031):
+//   - "disponible": reutiliza allocate_free_money_to_category (migración
+//     0028), que ya acepta cualquier categoría como destino, Gasto incluido.
+//   - "ahorro": fund_fixed_expense_from_savings (migración 0031), debita esa
+//     categoría de Ahorro puntual y valida que tenga saldo suficiente.
 export async function bumpFixedExpenseThisMonth(input: {
   categoryId: string
   amount: number
+  source: 'disponible' | 'ahorro'
+  // Requerido cuando source es "ahorro": de qué categoría de Ahorro sale la plata.
+  sourceCategoryId?: string
 }): Promise<{ error?: string }> {
   if (!(input.amount > 0)) {
     return { error: 'Ingresa un monto mayor a 0.' }
+  }
+  if (input.source === 'ahorro' && !input.sourceCategoryId) {
+    return { error: 'Elige de qué ahorro sale la plata.' }
   }
 
   const supabase = await createClient()
@@ -616,28 +714,35 @@ export async function bumpFixedExpenseThisMonth(input: {
     return { error: 'Esto solo aplica a categorías del pilar Gasto.' }
   }
 
-  const { error } = await supabase.from('transactions').insert({
-    user_id: user.id,
-    pillar_id: category.pillar_id,
-    category_id: category.id,
-    amount: input.amount,
-    type: 'extra_income',
-    description: 'Aumento puntual de este mes',
-  })
+  const { error } =
+    input.source === 'disponible'
+      ? await supabase.rpc('allocate_free_money_to_category', {
+          p_amount: input.amount,
+          p_category_id: input.categoryId,
+          p_description: 'Aumento puntual de este mes (desde Dinero libre)',
+          p_date: null,
+        })
+      : await supabase.rpc('fund_fixed_expense_from_savings', {
+          p_gasto_category_id: input.categoryId,
+          p_ahorro_category_id: input.sourceCategoryId,
+          p_amount: input.amount,
+          p_description: null,
+        })
   if (error) {
-    console.error('[bumpFixedExpenseThisMonth] insert error:', {
+    console.error('[bumpFixedExpenseThisMonth] rpc error:', {
       message: error.message,
       details: error.details,
       hint: error.hint,
       code: error.code,
       input,
     })
-    return { error: 'No pudimos registrar el aumento. Prueba de nuevo.' }
+    return { error: error.message || 'No pudimos registrar el aumento. Prueba de nuevo.' }
   }
 
   revalidatePath('/mi-dinero')
   revalidatePath('/mi-dinero/[pillarId]', 'page')
   revalidatePath('/mi-dinero/[pillarId]/[categoryId]', 'page')
+  revalidatePath('/mi-dinero/libre')
   revalidatePath('/')
   return {}
 }

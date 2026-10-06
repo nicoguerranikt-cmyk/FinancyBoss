@@ -38,6 +38,31 @@ export function lastFixedExpenseOccurrence(c: FixedExpenseConfig, today: DateYMD
   return lastRecurrenceOccurrence(toRecurrenceConfig(c), today)
 }
 
+// ¿Ya se pagó la cuota vencida? Un pago es un GASTO (amount < 0) de la
+// categoría. Un reparto mensual o un ingreso extra son positivos y NO cuentan
+// como pago: si no, un reparto posterior al vencimiento ocultaría el aviso o
+// respondería "ya confirmaste" sin que se haya pagado nada.
+export function lastFixedExpensePaymentDate(transactions: { amount: number; date: string }[]): string | null {
+  let last: string | null = null
+  for (const t of transactions) {
+    if (t.amount < 0 && (last === null || t.date > last)) last = t.date
+  }
+  return last
+}
+
+// La cuota que venció en `dueDate` está pendiente si todavía no hay un pago
+// (ver lastFixedExpensePaymentDate) con fecha igual o posterior.
+export function isFixedExpensePending(dueDate: string, lastPaymentDate: string | null | undefined): boolean {
+  return !lastPaymentDate || lastPaymentDate < dueDate
+}
+
+// Aumento puntual del presupuesto de este mes de una categoría de Gasto:
+// solo ingresos extra reales. El reparto mensual (is_allocation) ya está en
+// el monto fijo de la categoría; sumarlo otra vez duplicaría lo asignado.
+export function fixedExpenseExtraThisMonth(transactions: { amount: number; is_allocation: boolean }[]): number {
+  return transactions.filter((t) => t.amount > 0 && !t.is_allocation).reduce((sum, t) => sum + t.amount, 0)
+}
+
 // Cuánto de este gasto fijo corresponde reservar del presupuesto diario
 // ESTE mes calendario, prorrateado según la frecuencia — solo para
 // categorías con fixed_reserve_ahead = true (decisión configurable por

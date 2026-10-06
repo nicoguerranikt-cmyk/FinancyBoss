@@ -15,12 +15,14 @@ export async function loadGastoPillarData(supabase: SupabaseClient, userId: stri
     supabase.from('pillars').select('id, name, monthly_amount').eq('id', pillarId).eq('user_id', userId).maybeSingle(),
     supabase
       .from('categories')
-      .select('id, name, fixed_amount, is_general')
+      .select(
+        'id, name, fixed_amount, is_general, auto_repeat, fixed_start_date, fixed_interval_unit, fixed_interval_count'
+      )
       .eq('pillar_id', pillarId)
       .eq('user_id', userId)
       .is('deleted_at', null)
       .order('created_at', { ascending: true }),
-    supabase.from('transactions').select('category_id, amount').eq('user_id', userId).eq('pillar_id', pillarId),
+    supabase.from('transactions').select('category_id, amount, date').eq('user_id', userId).eq('pillar_id', pillarId),
   ])
 
   // La página que llama a esto hace `if (!data.pillar) notFound()` — sin
@@ -38,10 +40,19 @@ export async function loadGastoPillarData(supabase: SupabaseClient, userId: stri
   }
 
   const accumulatedByCategoryId: Record<string, number> = {}
+  // Última fecha con transacción por categoría — usado en fijos/page.tsx
+  // para saber si un gasto fijo con cuota vencida ya se confirmó este mes
+  // (mismo chequeo que hace confirmFixedExpense en mi-dinero/actions.ts).
+  const lastTransactionDateByCategoryId: Record<string, string> = {}
   let sinCategoria = 0
   for (const t of transactions ?? []) {
     if (t.category_id) {
       accumulatedByCategoryId[t.category_id] = (accumulatedByCategoryId[t.category_id] ?? 0) + t.amount
+      // Solo los gastos (amount < 0) cuentan como pago: un reparto o un
+      // ingreso extra no confirman una cuota (ver lastFixedExpensePaymentDate).
+      if (t.amount < 0 && (!lastTransactionDateByCategoryId[t.category_id] || t.date > lastTransactionDateByCategoryId[t.category_id])) {
+        lastTransactionDateByCategoryId[t.category_id] = t.date
+      }
     } else {
       sinCategoria += t.amount
     }
@@ -63,6 +74,7 @@ export async function loadGastoPillarData(supabase: SupabaseClient, userId: stri
     fixedCategories,
     everydayCategories,
     accumulatedByCategoryId,
+    lastTransactionDateByCategoryId,
     sinCategoria,
     fixedAccumulated,
     everydayAccumulated,

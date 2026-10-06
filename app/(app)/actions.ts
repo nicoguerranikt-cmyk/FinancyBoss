@@ -157,7 +157,7 @@ async function checkDominoAfterTransaction(
         .eq('user_id', ctx.userId),
       supabase
         .from('transactions')
-        .select('pillar_id, category_id, amount, date')
+        .select('pillar_id, category_id, amount, date, is_allocation')
         .eq('user_id', ctx.userId)
         .gte('date', start)
         .lte('date', end),
@@ -247,6 +247,81 @@ async function checkDominoAfterTransaction(
     sourceCategoryId: ctx.sourceCategoryId,
     amount: overspendToday,
   }
+}
+
+// Saldo actual del pilar este mes, mismo cálculo que computeDashboard (ver
+// checkDominoAfterTransaction arriba) — lo usa resolveDeficit para validar
+// que Ahorro/Inversión realmente tenga esa plata antes de dejar que el
+// usuario declare que de ahí salió un déficit de Gasto. No alcanza con sumar
+// las transacciones de una categoría puntual: domino_events anteriores ya
+// pueden haber debitado el pilar entero sin dejar fila en transactions.
+async function computePillarSaldoThisMonth(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  pillarId: string
+): Promise<number> {
+  const { start, end } = monthRangeInBolivia()
+  const { startUtc, endUtc } = monthRangeUtcInstant()
+  const today = todayInBolivia()
+
+  const [{ data: profile }, { data: pillars }, { data: categories }, { data: transactions }, { data: dominoEvents }, carriedOverByPillarId] =
+    await Promise.all([
+      supabase.from('profiles').select('base_income').eq('id', userId).single(),
+      supabase.from('pillars').select('id, name, monthly_amount').eq('user_id', userId),
+      supabase
+        .from('categories')
+        .select(
+          'id, pillar_id, fixed_amount, auto_repeat, fixed_start_date, fixed_interval_unit, fixed_interval_count, fixed_reserve_ahead, deleted_at'
+        )
+        .eq('user_id', userId),
+      supabase
+        .from('transactions')
+        .select('pillar_id, category_id, amount, date, is_allocation')
+        .eq('user_id', userId)
+        .gte('date', start)
+        .lte('date', end),
+      supabase
+        .from('domino_events')
+        .select('source_category_id, affected_category_id, debt_id, amount')
+        .eq('user_id', userId)
+        .gte('created_at', startUtc)
+        .lt('created_at', endUtc),
+      getCarriedOverByPillarId(supabase, userId, today.year, today.month),
+    ])
+
+  const gastoPillar = pillars?.find((p) => p.name === 'gasto')
+  const ahorroPillar = pillars?.find((p) => p.name === 'ahorro')
+  if (!profile || !pillars || !gastoPillar || !ahorroPillar) return 0
+
+  const categoryPillarById = Object.fromEntries((categories ?? []).map((c) => [c.id, c.pillar_id]))
+  const dominoPillarAdjustments = computeDominoPillarAdjustments(
+    dominoEvents ?? [],
+    categoryPillarById,
+    ahorroPillar.id,
+    gastoPillar.id
+  )
+
+  const daysThisMonth = daysInMonth(today.year, today.month)
+  const fixedReserveByPillarId: Record<string, number> = {}
+  const reservedCategoryIds: string[] = []
+  for (const c of categories ?? []) {
+    if (c.deleted_at || !c.auto_repeat || !c.fixed_reserve_ahead || !isFixedExpenseScheduled(c)) continue
+    reservedCategoryIds.push(c.id)
+    const reserve = monthlyReserveAmount(c, today, daysThisMonth)
+    fixedReserveByPillarId[c.pillar_id] = (fixedReserveByPillarId[c.pillar_id] ?? 0) + reserve
+  }
+
+  const dashboard = computeDashboard({
+    baseIncome: profile.base_income,
+    pillars,
+    transactionsThisMonth: transactions ?? [],
+    fixedReserveByPillarId,
+    reservedCategoryIds,
+    dominoPillarAdjustments,
+    carriedOverByPillarId,
+  })
+
+  return dashboard.pillars.find((p) => p.id === pillarId)?.saldo ?? 0
 }
 
 // Botón opcional de Caso 1: "Cubrir con Ahorro" el exceso de HOY. No exige
@@ -366,6 +441,19 @@ export async function resolveDeficit(input: ResolveDeficitInput): Promise<{ erro
       .maybeSingle()
     if (!pillar || pillar.name !== input.choice) {
       return { error: 'Esa categoría no pertenece al pilar elegido.' }
+    }
+
+    // No se puede declarar "esto salió de Ahorro/Inversión" si ese pilar no
+    // tiene esa plata de verdad — mismo principio que el resto de la app
+    // ("no se puede fabricar plata de la nada"). El saldo se calcula igual
+    // que en el Dashboard (computeDashboard), no solo la suma de
+    // transacciones de la categoría: domino_events anteriores ya pueden
+    // haber debitado ese pilar sin dejar una fila en transactions.
+    const pillarSaldo = await computePillarSaldoThisMonth(supabase, user.id, pillar.id)
+    if (pillarSaldo < input.amount - EPSILON) {
+      return {
+        error: `${input.choice === 'ahorro' ? 'Ahorro' : 'Inversión'} solo tiene ${Math.max(0, pillarSaldo).toFixed(2)} Bs disponibles este mes.`,
+      }
     }
 
     const { error } = await supabase.from('domino_events').insert({

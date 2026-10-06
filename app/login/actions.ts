@@ -6,20 +6,10 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { safeNextPath } from '@/lib/safeNextPath'
 
 // Forma del estado que useActionState muestra en el formulario.
 export type AuthState = { error?: string } | undefined
-
-// Solo rutas internas: tiene que empezar con "/" y no con "//" ni "/\" (esas
-// dos son formas de meter una URL externa ahí — "open redirect" — que un
-// navegador puede interpretar como protocol-relative a otro host).
-function safeNextPath(value: FormDataEntryValue | null): string {
-  const path = typeof value === 'string' ? value : ''
-  if (path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\')) {
-    return path
-  }
-  return '/'
-}
 
 export async function login(
   _prevState: AuthState,

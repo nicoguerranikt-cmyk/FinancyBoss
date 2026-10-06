@@ -12,7 +12,14 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import Link from '../../../AppLink'
-import { todayInBolivia, type PillarName } from '@/lib/dashboard'
+import { monthRangeInBolivia, todayInBolivia, type PillarName } from '@/lib/dashboard'
+import {
+  fixedExpenseExtraThisMonth,
+  isFixedExpensePending,
+  isFixedExpenseScheduled,
+  lastFixedExpenseOccurrence,
+  lastFixedExpensePaymentDate,
+} from '@/lib/fixedExpense'
 import CategoryDetailClient from './CategoryDetailClient'
 import PageReadySignal from '../../../PageReadySignal'
 
@@ -55,11 +62,15 @@ export default async function CategoryDetailPage({
     .maybeSingle()
   if (!category) notFound()
 
-  // Retorno de inversión: el destino "a una categoría de Ahorro" necesita la
-  // lista de categorías de Ahorro del usuario — solo se pide cuando hace
-  // falta (pillar Inversión).
-  let ahorroCategories: { id: string; name: string }[] = []
-  if (pillar.name === 'inversion') {
+  // Lista de categorías de Ahorro del usuario, con su saldo acumulado: la
+  // necesitan 2 casos (ver CategoryDetailClient) — retorno de inversión,
+  // destino "a una categoría de Ahorro" (pillar Inversión), y "Aumentar
+  // presupuesto este mes" con fuente "Ahorro" (gastos fijos de Gasto,
+  // migración 0031). Vacía en cualquier otro caso.
+  let ahorroCategories: { id: string; name: string; balance: number }[] = []
+  const needsAhorroCategories =
+    pillar.name === 'inversion' || (pillar.name === 'gasto' && category.fixed_amount !== null)
+  if (needsAhorroCategories) {
     const { data: ahorroPillar } = await supabase
       .from('pillars')
       .select('id')
@@ -67,13 +78,20 @@ export default async function CategoryDetailPage({
       .eq('name', 'ahorro')
       .maybeSingle()
     if (ahorroPillar) {
-      const { data: ahorroCats } = await supabase
-        .from('categories')
-        .select('id, name')
-        .eq('pillar_id', ahorroPillar.id)
-        .eq('user_id', userId)
-        .is('deleted_at', null)
-      ahorroCategories = ahorroCats ?? []
+      const [{ data: ahorroCats }, { data: ahorroTx }] = await Promise.all([
+        supabase
+          .from('categories')
+          .select('id, name')
+          .eq('pillar_id', ahorroPillar.id)
+          .eq('user_id', userId)
+          .is('deleted_at', null),
+        supabase.from('transactions').select('category_id, amount').eq('user_id', userId).eq('pillar_id', ahorroPillar.id),
+      ])
+      const balanceByCategoryId: Record<string, number> = {}
+      for (const t of ahorroTx ?? []) {
+        if (t.category_id) balanceByCategoryId[t.category_id] = (balanceByCategoryId[t.category_id] ?? 0) + t.amount
+      }
+      ahorroCategories = (ahorroCats ?? []).map((c) => ({ ...c, balance: balanceByCategoryId[c.id] ?? 0 }))
     }
   }
 
@@ -86,6 +104,59 @@ export default async function CategoryDetailPage({
     .order('created_at', { ascending: false })
 
   const accumulated = (history ?? []).reduce((sum, t) => sum + t.amount, 0)
+
+  // ¿Este gasto fijo tiene una cuota vencida sin confirmar? (migración del
+  // auto-insert silencioso al recordatorio+confirmar, ver confirmFixedExpense
+  // en mi-dinero/actions.ts y el aviso del Dashboard). Mismo chequeo que hace
+  // esa action (última transacción vs. la fecha que ya corresponde).
+  const today = todayInBolivia()
+  let pendingFixedConfirmation = false
+  if (pillar.name === 'gasto' && category.auto_repeat && isFixedExpenseScheduled(category)) {
+    const dueDate = lastFixedExpenseOccurrence(category, today)
+    if (dueDate) {
+      pendingFixedConfirmation = isFixedExpensePending(dueDate, lastFixedExpensePaymentDate(history ?? []))
+    }
+  }
+
+  // Asignado/usado/restante de ESTE MES para gastos fijos de Gasto — a
+  // diferencia de "acumulado" (histórico, arriba), esto resetea cada mes
+  // porque fixed_amount es un presupuesto mensual. "Asignado" incluye los
+  // aumentos puntuales del mes (bumpFixedExpenseThisMonth, type
+  // 'extra_income' contra esta misma categoría — migración 0031).
+  let fixedBudget: {
+    assigned: number
+    used: number
+    remaining: number
+    modality: 'pago_unico' | 'consumo_gradual'
+    status: 'pendiente' | 'pagado' | 'programado' | 'agotado' | 'disponible'
+  } | null = null
+  if (pillar.name === 'gasto' && category.fixed_amount !== null) {
+    const { start, end } = monthRangeInBolivia()
+    const thisMonthTx = (history ?? []).filter((t) => t.date >= start && t.date <= end)
+    const extraThisMonth = fixedExpenseExtraThisMonth(thisMonthTx)
+    const used = thisMonthTx.filter((t) => t.amount < 0).reduce((s, t) => s + -t.amount, 0)
+    const assigned = category.fixed_amount + extraThisMonth
+    const remaining = assigned - used
+
+    if (category.auto_repeat && isFixedExpenseScheduled(category)) {
+      const dueDate = lastFixedExpenseOccurrence(category, today)
+      fixedBudget = {
+        assigned,
+        used,
+        remaining,
+        modality: 'pago_unico',
+        status: !dueDate ? 'programado' : pendingFixedConfirmation ? 'pendiente' : 'pagado',
+      }
+    } else {
+      fixedBudget = {
+        assigned,
+        used,
+        remaining,
+        modality: 'consumo_gradual',
+        status: remaining <= 0 ? 'agotado' : 'disponible',
+      }
+    }
+  }
 
   // Gasto ya no tiene una lista única (ver [pillarId]/page.tsx: ahí es un
   // selector) — "volver" tiene que llevar a la pantalla de la que
@@ -110,9 +181,11 @@ export default async function CategoryDetailPage({
         category={category}
         accumulated={accumulated}
         history={history ?? []}
-        todayIso={todayInBolivia().iso}
+        todayIso={today.iso}
         backHref={backHref}
         ahorroCategories={ahorroCategories}
+        pendingFixedConfirmation={pendingFixedConfirmation}
+        fixedBudget={fixedBudget}
       />
     </div>
   )
