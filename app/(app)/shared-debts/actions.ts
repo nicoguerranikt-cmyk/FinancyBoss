@@ -544,24 +544,19 @@ export async function getCreditorPaymentQrUrl(input: {
   } = await supabase.auth.getUser()
   if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
 
-  const { data: debt } = await supabase
-    .from('shared_debts')
-    .select('creditor_user_id')
-    .eq('id', input.sharedDebtId)
-    .eq('debtor_user_id', user.id)
-    .maybeSingle()
-  if (!debt) return { error: 'Deuda vinculada inválida.' }
+  // El perfil del acreedor no es legible por el deudor (RLS: cada uno ve solo
+  // el suyo), así que la ruta del QR sale de una función que valida la
+  // relación y entrega únicamente ese dato (migración 0032).
+  const { data: qrPath, error: pathError } = await supabase.rpc('get_creditor_payment_qr_path', {
+    p_shared_debt_id: input.sharedDebtId,
+  })
+  if (pathError) {
+    console.error('[getCreditorPaymentQrUrl] qr path error:', pathError)
+    return { error: 'No pudimos cargar el QR. Prueba de nuevo.' }
+  }
+  if (!qrPath) return { qrUrl: null }
 
-  const { data: creditorProfile } = await supabase
-    .from('profiles')
-    .select('payment_qr_path')
-    .eq('id', debt.creditor_user_id)
-    .maybeSingle()
-  if (!creditorProfile?.payment_qr_path) return { qrUrl: null }
-
-  const { data: signed, error } = await supabase.storage
-    .from('payment-media')
-    .createSignedUrl(creditorProfile.payment_qr_path, 60 * 10)
+  const { data: signed, error } = await supabase.storage.from('payment-media').createSignedUrl(qrPath, 60 * 10)
   if (error) {
     console.error('[getCreditorPaymentQrUrl] signed url error:', error)
     return { error: 'No pudimos cargar el QR. Prueba de nuevo.' }
@@ -605,7 +600,11 @@ export async function uploadPaymentReceipt(formData: FormData): Promise<{ error?
     return { error: 'No pudimos subir el comprobante. Prueba de nuevo.' }
   }
 
-  const { error } = await supabase.from('shared_debt_payments').update({ receipt_path: path }).eq('id', paymentId)
+  // Un UPDATE directo no sirve: RLS no deja al deudor tocar shared_debt_payments
+  // y el UPDATE "tiene éxito" con 0 filas. La función (migración 0032) valida
+  // que el pago sea suyo y esté pendiente, y falla si no actualizó exactamente
+  // una fila — así nunca se responde "listo" sin que el comprobante quede.
+  const { error } = await supabase.rpc('attach_payment_receipt', { p_payment_id: paymentId, p_path: path })
   if (error) {
     console.error('[uploadPaymentReceipt] update error:', {
       message: error.message,

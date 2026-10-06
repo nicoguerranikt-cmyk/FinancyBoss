@@ -528,8 +528,8 @@ Primer uso de archivos en el proyecto (hasta acá todo era filas en tablas) — 
 - **QR de cobro**: en Más → Perfil, cualquier usuario puede subir la foto de su QR para cobrar (banco, billetera). Cuando el deudor de una deuda vinculada abre "Proponer pago", ve ahí mismo el QR del acreedor (si subió uno) — no hace falta pedírselo por otro lado.
 - **Comprobante**: al proponer el pago, el deudor puede adjuntar (opcional, nunca obligatorio) una foto del comprobante. El acreedor la ve con un botón "Ver comprobante" antes de confirmar.
 - Bucket privado (`payment-media`, no público) — las imágenes nunca tienen una URL fija: siempre se piden por **signed URL** generada del lado del servidor, después de validar contra `shared_debts`/`shared_debt_payments` (mismo criterio de "revalidar todo en el servidor" del resto del proyecto). Las políticas de `storage.objects` son las que de verdad deciden quién puede leer/escribir cada archivo:
-  - El QR de un usuario lo puede leer él mismo, o cualquiera que sea (o haya sido) su deudor en una deuda vinculada — nadie más.
-  - Un comprobante lo pueden leer las dos partes de esa deuda puntual, y solo el deudor puede subirlo.
+  - El QR de un usuario lo puede leer él mismo, o quien sea su deudor en una deuda vinculada **aceptada** (`active`) — una invitación pendiente no da acceso. Nadie más. El deudor obtiene la ruta del QR con `get_creditor_payment_qr_path` (migración 0032); no puede leer el perfil del acreedor.
+  - Un comprobante lo pueden leer las dos partes de esa deuda puntual, y solo el deudor puede subirlo, **mientras el pago está pendiente**: una vez confirmado o rechazado queda congelado. Se vincula al pago con `attach_payment_receipt` (migración 0032), que falla si no actualiza exactamente una fila.
 - Paths fijos (`qr/{user_id}`, `receipts/{payment_id}`) con upsert: un re-upload pisa el anterior, no quedan archivos sueltos acumulados.
 
 ---
