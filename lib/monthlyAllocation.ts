@@ -15,6 +15,7 @@
 // categoría "general" del pilar.
 
 import { EPSILON } from './domino'
+import { distributeCents } from './money'
 
 export type AllocationCategory = {
   id: string
@@ -46,5 +47,8 @@ export function computeMonthlyAllocation(
     rows.push({ categoryId: general.id, amount: Math.max(0, pillarBudget - assigned), isGeneral: true })
   }
 
-  return rows
+  // Al escalar, cada monto puede tener fracciones de centavo: se redondean a
+  // centavos conservando el total exacto (lib/money.ts), sin perder ninguno.
+  const cents = distributeCents(rows.map((r) => r.amount))
+  return rows.map((r, i) => ({ ...r, amount: cents[i] }))
 }

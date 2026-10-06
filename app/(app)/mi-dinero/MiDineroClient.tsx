@@ -91,6 +91,7 @@ export default function MiDineroClient({ pillars, baseIncome }: { pillars: Pilla
               <input
                 id={`amount-${pillar.name}`}
                 type="number"
+                step="any"
                 onWheel={(e) => e.currentTarget.blur()}
                 min={0}
                 value={amounts[pillar.name]}

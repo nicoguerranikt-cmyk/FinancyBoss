@@ -265,6 +265,7 @@ export default function DeudasClient({
               <div className="mt-2 flex flex-col gap-2 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
                 <input
                   type="number"
+                  step="any"
                   onWheel={(e) => e.currentTarget.blur()}
                   min={0}
                   placeholder="Cuota (Bs)"
@@ -367,6 +368,7 @@ export default function DeudasClient({
                   <div className="mt-3 flex flex-col gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
                     <input
                       type="number"
+                      step="any"
                       onWheel={(e) => e.currentTarget.blur()}
                       min={0}
                       placeholder="Monto (Bs)"

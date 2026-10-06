@@ -6,6 +6,7 @@ import { computeDashboard, daysInMonth, monthRangeInBolivia, monthRangeUtcInstan
 import { EPSILON, buildCaso1Message, computeDominoPillarAdjustments } from '@/lib/domino'
 import { isFixedExpenseScheduled, monthlyReserveAmount } from '@/lib/fixedExpense'
 import { getCarriedOverByPillarId } from '@/lib/monthClose'
+import { ensureMonthlyAllocation } from '@/lib/monthlyAllocation.server'
 
 // Solo para excluir el gasto de una categoría fija de "cuánto gastaste HOY"
 // (Caso 1 del dominó, más abajo) — un gasto fijo no es un antojo del día,
@@ -322,6 +323,27 @@ async function computePillarSaldoThisMonth(
   })
 
   return dashboard.pillars.find((p) => p.id === pillarId)?.saldo ?? 0
+}
+
+// "Reajustar automáticamente" del aviso de ingreso insuficiente (manual
+// §2.1): el usuario pide, con un botón, que el reparto de este mes se genere
+// con los pilares reducidos proporcionalmente al ingreso confirmado. Solo
+// afecta este mes — los montos configurados en Mi Dinero no se tocan. Si el
+// reparto ya existe, no hace nada (ensureMonthlyAllocation es idempotente).
+export async function reduceAllocationToIncome(): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
+
+  await ensureMonthlyAllocation(supabase, user.id, { reduceToIncome: true })
+
+  revalidatePath('/')
+  revalidatePath('/mi-dinero')
+  revalidatePath('/mi-dinero/[pillarId]', 'page')
+  revalidatePath('/mi-dinero/[pillarId]/[categoryId]', 'page')
+  return {}
 }
 
 // Botón opcional de Caso 1: "Cubrir con Ahorro" el exceso de HOY. No exige

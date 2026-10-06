@@ -305,8 +305,9 @@ export default function QuickAddForm({
           <input
             id="qa-amount"
             type="number"
+            step="any"
               onWheel={(e) => e.currentTarget.blur()}
-            inputMode="numeric"
+            inputMode="decimal"
             min={0}
             value={amount}
             onChange={(e) => setAmount(e.target.value)}

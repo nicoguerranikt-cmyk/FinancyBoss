@@ -202,6 +202,7 @@ export default function MasClient({
             <input
               id="baseIncome"
               type="number"
+              step="any"
               onWheel={(e) => e.currentTarget.blur()}
               min={0}
               value={baseIncome}

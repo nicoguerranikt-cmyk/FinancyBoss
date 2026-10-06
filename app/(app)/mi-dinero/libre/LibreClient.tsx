@@ -149,6 +149,7 @@ export default function LibreClient({
             <input
               id="libre-amount"
               type="number"
+              step="any"
               onWheel={(e) => e.currentTarget.blur()}
               min={0}
               value={amount}

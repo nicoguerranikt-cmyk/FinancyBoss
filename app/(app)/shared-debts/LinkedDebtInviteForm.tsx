@@ -364,6 +364,7 @@ export default function LinkedDebtInviteForm({ role, todayIso }: { role: 'debtor
           />
           <input
             type="number"
+            step="any"
             onWheel={(e) => e.currentTarget.blur()}
             min={0}
             placeholder="Monto total (Bs)"
@@ -386,6 +387,7 @@ export default function LinkedDebtInviteForm({ role, todayIso }: { role: 'debtor
             <div className="flex flex-col gap-2 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
               <input
                 type="number"
+                step="any"
                 onWheel={(e) => e.currentTarget.blur()}
                 min={0}
                 placeholder="Cuota (Bs)"

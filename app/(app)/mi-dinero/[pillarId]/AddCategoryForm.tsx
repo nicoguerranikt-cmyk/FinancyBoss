@@ -66,6 +66,7 @@ export default function AddCategoryForm({
         {withFixedAmount && (
           <input
             type="number"
+            step="any"
             onWheel={(e) => e.currentTarget.blur()}
             min={0}
             value={amount}

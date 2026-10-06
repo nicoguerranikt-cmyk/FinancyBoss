@@ -510,6 +510,7 @@ export default function CategoryDetailClient({
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <input
                   type="number"
+                  step="any"
                   onWheel={(e) => e.currentTarget.blur()}
                   min={0}
                   value={bumpAmount}
@@ -622,6 +623,7 @@ export default function CategoryDetailClient({
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <input
                   type="number"
+                  step="any"
                   onWheel={(e) => e.currentTarget.blur()}
                   min={0}
                   value={pastSavingsAmount}
@@ -669,6 +671,7 @@ export default function CategoryDetailClient({
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <input
                   type="number"
+                  step="any"
                   onWheel={(e) => e.currentTarget.blur()}
                   min={0}
                   value={pastInvestmentAmount}
@@ -770,6 +773,7 @@ export default function CategoryDetailClient({
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <input
                   type="number"
+                  step="any"
                   onWheel={(e) => e.currentTarget.blur()}
                   min={0}
                   value={returnAmount}
@@ -862,6 +866,7 @@ export default function CategoryDetailClient({
                 <label className="text-sm text-zinc-500">Monto fijo (Bs)</label>
                 <input
                   type="number"
+                  step="any"
                   onWheel={(e) => e.currentTarget.blur()}
                   min={0}
                   placeholder="—"
@@ -949,6 +954,7 @@ export default function CategoryDetailClient({
                 <label className="text-sm text-zinc-500">Monto mensual (Bs)</label>
                 <input
                   type="number"
+                  step="any"
                   onWheel={(e) => e.currentTarget.blur()}
                   min={0}
                   placeholder="—"
@@ -972,6 +978,7 @@ export default function CategoryDetailClient({
                 <label className="text-sm text-zinc-500">Monto</label>
                 <input
                   type="number"
+                  step="any"
                   onWheel={(e) => e.currentTarget.blur()}
                   min={0}
                   placeholder="—"

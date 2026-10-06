@@ -142,6 +142,7 @@ export default function UsdSavingsClient({
           <div className="mt-3 flex flex-col gap-2">
             <input
               type="number"
+              step="any"
               onWheel={(e) => e.currentTarget.blur()}
               min={0}
               placeholder="Monto (USD)"
@@ -190,6 +191,7 @@ export default function UsdSavingsClient({
             <div className="flex gap-2">
               <input
                 type="number"
+                step="any"
                 onWheel={(e) => e.currentTarget.blur()}
                 min={0}
                 placeholder="Sacas (USD)"
@@ -202,6 +204,7 @@ export default function UsdSavingsClient({
               />
               <input
                 type="number"
+                step="any"
                 onWheel={(e) => e.currentTarget.blur()}
                 min={0}
                 placeholder="Son (Bs)"

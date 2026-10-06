@@ -16,15 +16,26 @@
 // que cada llamador la repita.
 
 import type { createClient } from '@/lib/supabase/server'
-import { monthRangeFor, todayInBolivia } from '@/lib/dashboard'
+import { incomeCoverage, monthRangeFor, todayInBolivia } from '@/lib/dashboard'
+import { distributeCents } from '@/lib/money'
 import { computeMonthlyAllocation, type AllocationCategory } from '@/lib/monthlyAllocation'
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>
 
-export async function ensureMonthlyAllocation(supabase: SupabaseClient, userId: string): Promise<void> {
+// Si el ingreso confirmado no alcanza para los montos de los pilares (ver
+// incomeCoverage en lib/dashboard.ts), el reparto NO se genera solo: la app
+// le avisa al usuario cuánto falta y él decide (manual §2.1). Con
+// `reduceToIncome: true` — lo pide el usuario con el botón "Reajustar
+// automáticamente" — se reparte con los pilares reducidos proporcionalmente,
+// igual que el Dashboard, solo para este mes (la configuración no se toca).
+export async function ensureMonthlyAllocation(
+  supabase: SupabaseClient,
+  userId: string,
+  options: { reduceToIncome?: boolean } = {}
+): Promise<void> {
   const { data: profile } = await supabase
     .from('profiles')
-    .select('auto_repeat_income, income_confirmed_year, income_confirmed_month')
+    .select('base_income, auto_repeat_income, income_confirmed_year, income_confirmed_month')
     .eq('id', userId)
     .single()
   if (!profile) return
@@ -57,6 +68,10 @@ export async function ensureMonthlyAllocation(supabase: SupabaseClient, userId: 
       .is('deleted_at', null),
   ])
 
+  const coverage = incomeCoverage(profile.base_income, pillars ?? [])
+  if (coverage.isShort && !options.reduceToIncome) return
+  const pillarScale = coverage.isShort ? coverage.scaleFactor : 1
+
   const categoriesByPillarId: Record<string, AllocationCategory[]> = {}
   for (const c of categories ?? []) {
     ;(categoriesByPillarId[c.pillar_id] ??= []).push({
@@ -78,9 +93,16 @@ export async function ensureMonthlyAllocation(supabase: SupabaseClient, userId: 
   }
   const rowsToInsert: Row[] = []
 
-  for (const pillar of pillars ?? []) {
+  // Montos del mes por pilar. Si se redujeron al ingreso, se pasan a centavos
+  // conservando el total exacto (la suma da el ingreso, sin perder centavos).
+  const pillarList = pillars ?? []
+  const pillarAmounts = coverage.isShort
+    ? distributeCents(pillarList.map((p) => p.monthly_amount * pillarScale))
+    : pillarList.map((p) => p.monthly_amount)
+
+  for (const [index, pillar] of pillarList.entries()) {
     const cats = categoriesByPillarId[pillar.id] ?? []
-    const allocation = computeMonthlyAllocation(pillar.monthly_amount, cats)
+    const allocation = computeMonthlyAllocation(pillarAmounts[index], cats)
 
     for (const row of allocation) {
       if (row.amount <= 0) continue

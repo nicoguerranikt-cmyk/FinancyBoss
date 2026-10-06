@@ -8,6 +8,7 @@
 // el monto del pilar sale de sumar el de sus categorías.
 
 import { useState } from 'react'
+import { formatBs } from '@/lib/format'
 import { completeOnboarding, type PillarKey } from './actions'
 
 // Subcategorías sugeridas por pilar (tabla del manual, sección 1.2, pantalla 3).
@@ -40,10 +41,6 @@ function initialCats(): Record<PillarKey, CatItem[]> {
 const PILLAR_KEYS: PillarKey[] = ['ahorro', 'gasto', 'inversion']
 const DINERO_LIBRE_STEP = 2 + PILLAR_KEYS.length // paso final, después del último pilar
 const TOTAL_STEPS = DINERO_LIBRE_STEP + 1 // bienvenida + ingreso + 1 por pilar + dinero libre
-
-function formatBs(n: number) {
-  return new Intl.NumberFormat('es-BO', { maximumFractionDigits: 0 }).format(n)
-}
 
 export default function OnboardingWizard({ userName }: { userName: string }) {
   const [step, setStep] = useState(0)
@@ -102,10 +99,12 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
   }
 
   function setCatAmount(pillar: PillarKey, index: number, value: string) {
-    const n = Math.max(0, Math.round(Number(value) || 0))
+    // Sin redondear: el usuario puede escribir centavos (12.50). Solo se
+    // evita un monto negativo.
+    const amount = value === '' ? '' : Number(value) < 0 ? '0' : value
     setCats((prev) => {
       const copy = { ...prev, [pillar]: [...prev[pillar]] }
-      copy[pillar][index] = { ...copy[pillar][index], amount: value === '' ? '' : String(n) }
+      copy[pillar][index] = { ...copy[pillar][index], amount }
       return copy
     })
   }
@@ -206,8 +205,9 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
               <input
                 id="income"
                 type="number"
+                step="any"
                 onWheel={(e) => e.currentTarget.blur()}
-                inputMode="numeric"
+                inputMode="decimal"
                 min={0}
                 value={income}
                 onChange={(e) => setIncome(e.target.value)}
@@ -270,6 +270,7 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
                     <div className="flex items-center gap-1">
                       <input
                         type="number"
+                        step="any"
                         onWheel={(e) => e.currentTarget.blur()}
                         min={0}
                         value={cat.amount}
@@ -300,6 +301,7 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
               />
               <input
                 type="number"
+                step="any"
                 onWheel={(e) => e.currentTarget.blur()}
                 min={0}
                 value={newAmount[pillar]}

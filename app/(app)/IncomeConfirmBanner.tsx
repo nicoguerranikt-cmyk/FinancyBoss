@@ -46,6 +46,7 @@ export default function IncomeConfirmBanner({ name, baseIncome }: { name: string
       <div className="flex items-center gap-2">
         <input
           type="number"
+          step="any"
           onWheel={(e) => e.currentTarget.blur()}
           min={0}
           value={amount}

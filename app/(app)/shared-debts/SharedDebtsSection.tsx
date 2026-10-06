@@ -422,6 +422,7 @@ export default function SharedDebtsSection({
                           )}
                           <input
                             type="number"
+                            step="any"
                             onWheel={(e) => e.currentTarget.blur()}
                             min={0}
                             placeholder="Monto (Bs)"

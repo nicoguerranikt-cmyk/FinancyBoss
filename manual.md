@@ -107,7 +107,10 @@ No hay tour completo de la app.
 - No se pueden borrar, renombrar ni reordenar.
 - Cada pilar tiene un **monto fijo en Bs** definido por el usuario (migración 0020 — ya no es un % del ingreso). El usuario lo edita desde Mi Dinero; no se recalcula solo si el ingreso cambia.
 - Los 3 montos **no pueden sumar más que el ingreso** ("no se puede fabricar plata de la nada"). Pueden sumar menos: la diferencia es **dinero libre**, sin destino asignado (ver `computeDashboard`, campo `freeMoney`).
-- Si el ingreso confirmado de un mes baja por debajo de lo que ya suman los 3 pilares, los 3 se reducen proporcionalmente ese mes (mismo criterio que el reparto interno de categorías cuando se pasan del presupuesto del pilar) — nadie se queda con más de lo que hay, y el usuario no pierde su configuración, solo se ajusta mientras dure el bajón de ingreso.
+- Si el ingreso confirmado de un mes baja por debajo de lo que ya suman los 3 pilares, **la app avisa cuánto falta** (aviso en el Dashboard) y **no genera el reparto a categorías** hasta que el usuario decida, con un botón:
+  - **Reajustar automáticamente:** el reparto de ese mes se genera con los 3 pilares reducidos proporcionalmente al ingreso (ej. ingreso 600 y pilares que suman 1.200 → todo a la mitad).
+  - **Ajustar yo en Mi Dinero:** el usuario edita sus montos; cuando entran en el ingreso, el reparto se genera normal.
+  - Nunca se mueve plata sin que el usuario lo pida. La configuración de Mi Dinero no se toca con el reajuste: solo afecta ese mes. Mientras no decide, el presupuesto del Dashboard ya usa los montos reducidos (misma regla, `incomeCoverage` en `lib/dashboard.ts`), así que nunca muestra más plata de la que hay.
 
 ### 2.2 Subcategorías
 

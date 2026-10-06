@@ -95,6 +95,19 @@ export type DashboardData = {
   freeMoney: number
 }
 
+// ¿El ingreso confirmado alcanza para los montos que ya suman los pilares?
+// Es la ÚNICA fuente de este cálculo: la usan computeDashboard (presupuesto
+// del mes) y el reparto a categorías (lib/monthlyAllocation.server.ts), así
+// los dos siempre coinciden. Si no alcanza, `scaleFactor` (< 1) es la
+// proporción en que se reducen los 3 pilares ese mes; la configuración de
+// Mi Dinero nunca se modifica.
+export function incomeCoverage(baseIncome: number, pillars: { monthly_amount: number }[]) {
+  const committed = pillars.reduce((sum, p) => sum + p.monthly_amount, 0)
+  const scaleFactor = committed > baseIncome && committed > 0 ? baseIncome / committed : 1
+  const shortfall = Math.max(0, committed - baseIncome)
+  return { committed, shortfall, scaleFactor, isShort: shortfall > 0.005 }
+}
+
 export function computeDashboard(input: {
   baseIncome: number
   pillars: PillarRow[]
@@ -134,8 +147,7 @@ export function computeDashboard(input: {
   // computeMonthlyAllocation cuando las categorías de un pilar se pasan de
   // su presupuesto) — la configuración de Mi Dinero no se toca, solo se
   // ajusta el cálculo de este mes puntual.
-  const committedTotal = input.pillars.reduce((sum, p) => sum + p.monthly_amount, 0)
-  const scaleFactor = committedTotal > input.baseIncome && committedTotal > 0 ? input.baseIncome / committedTotal : 1
+  const { scaleFactor } = incomeCoverage(input.baseIncome, input.pillars)
 
   const pillarSummaries: PillarSummary[] = input.pillars.map((pillar) => {
     // Deudas v2 (manual §6): todo pago de deuda sale de un pilar/categoría

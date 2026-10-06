@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/server'
 import {
   computeDashboard,
   daysInMonth,
+  incomeCoverage,
   monthRangeInBolivia,
   monthRangeUtcInstant,
   todayInBolivia,
@@ -28,6 +29,7 @@ import { closeElapsedMonths, getCarriedOverByPillarId } from '@/lib/monthClose'
 import { ensureMonthlyAllocation } from '@/lib/monthlyAllocation.server'
 import { PILLAR_COLOR } from '@/lib/pillarColors'
 import IncomeConfirmBanner from './IncomeConfirmBanner'
+import IncomeShortfallBanner from './IncomeShortfallBanner'
 import QuickAddForm from './QuickAddForm'
 
 const PILLAR_LABEL: Record<PillarName, string> = {
@@ -221,6 +223,14 @@ export default async function DashboardPage() {
     !profile?.auto_repeat_income &&
     (profile?.income_confirmed_year !== today.year || profile?.income_confirmed_month !== today.month)
 
+  // Ingreso confirmado que no alcanza para los montos de los pilares: se
+  // avisa y el usuario decide (reajustar solo o ajustar él). Mientras no
+  // exista el reparto de este mes, la decisión sigue pendiente — por eso se
+  // chequea también que no haya ninguna fila is_allocation todavía.
+  const coverage = incomeCoverage(profile?.base_income ?? 0, pillars ?? [])
+  const hasAllocationThisMonth = (transactions ?? []).some((t) => t.is_allocation)
+  const showIncomeShortfall = coverage.isShort && !needsIncomeConfirmation && !hasAllocationThisMonth
+
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
       <PageReadySignal />
@@ -279,6 +289,14 @@ export default async function DashboardPage() {
 
       {needsIncomeConfirmation && (
         <IncomeConfirmBanner name={profile?.name ?? ''} baseIncome={profile?.base_income ?? 0} />
+      )}
+
+      {showIncomeShortfall && (
+        <IncomeShortfallBanner
+          income={profile?.base_income ?? 0}
+          committed={coverage.committed}
+          shortfall={coverage.shortfall}
+        />
       )}
 
       {pendingAutoPayCount > 0 && (
