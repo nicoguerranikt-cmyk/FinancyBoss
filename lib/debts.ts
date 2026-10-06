@@ -3,7 +3,6 @@
 // criterio que lib/dashboard.ts y lib/domino.ts.
 
 import {
-  isRecurrenceConfigured,
   lastDueOccurrence as lastRecurrenceOccurrence,
   validateRecurrenceFrequency,
   type DateYMD,
@@ -54,22 +53,11 @@ function toRecurrenceConfig(debt: AutoPayConfig) {
   }
 }
 
-export function isAutoPayConfigured(debt: AutoPayConfig): boolean {
-  return debt.auto_pay_amount !== null && isRecurrenceConfigured(toRecurrenceConfig(debt))
-}
-
 // Fecha (YYYY-MM-DD) del vencimiento más reciente que ya llegó (<= today).
 // null si el plan no está configurado o todavía no arrancó.
 export function lastDueOccurrence(debt: AutoPayConfig, today: DateYMD): string | null {
   if (debt.auto_pay_amount === null) return null
   return lastRecurrenceOccurrence(toRecurrenceConfig(debt), today)
-}
-
-// ¿Ya llegó el momento de recordar una cuota? (No dice si ya se confirmó —
-// eso se chequea comparando contra la fecha de la última transacción de
-// esta deuda, ver app/(app)/deudas/page.tsx y app/(app)/page.tsx.)
-export function isAutoPayDue(debt: AutoPayConfig, today: DateYMD): boolean {
-  return lastDueOccurrence(debt, today) !== null
 }
 
 export type AutoPayFrequencyInput = {

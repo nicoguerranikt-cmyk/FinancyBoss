@@ -174,7 +174,7 @@ La pantalla de Configuración aclara esta distinción con un texto debajo del ca
 
 - El usuario puede registrar ingresos extra en cualquier momento del mes (freelance, bonos, regalos, etc.).
 - Al registrar un ingreso extra, el usuario **elige manualmente** a qué pilar o subcategoría va ese dinero.
-- No se distribuye automáticamente por %.
+- No se reparte solo: el usuario decide a dónde va.
 
 ### 3.3 Acumulación de saldos entre meses
 
@@ -266,9 +266,8 @@ Corolario: el sistema **nunca mueve dinero entre categorías por su cuenta**. O 
 
 ```
 Ingreso total
-  − Cuotas de deuda activas       ← comprometido
-  − Ahorro (%)                    ← comprometido, no se toca
-  − Inversión (%)                 ← comprometido, no se toca
+  − Ahorro (monto fijo en Bs)     ← comprometido, no se toca
+  − Inversión (monto fijo en Bs)  ← comprometido, no se toca
   − Gastos fijos "reservados"     ← comprometido (ver sección 4.2)
 = Plata discrecional del mes
   ÷ Días restantes
@@ -577,7 +576,7 @@ Donde **Más** agrupa: Perfil y Configuración.
 | Tab | Qué contiene |
 |---|---|
 | Dashboard | Presupuesto diario disponible, saldos en tiempo real, acceso rápido a registrar gasto/ingreso |
-| Mi Dinero | Pilares, subcategorías, % y saldos del mes. Acá el usuario organiza y edita cómo está distribuido su ingreso |
+| Mi Dinero | Pilares, subcategorías, montos en Bs y saldos del mes. Acá el usuario organiza y edita cómo está distribuido su ingreso |
 | Deudas | Lo que vos debés (cuotas, progreso, deudas saldadas) |
 | Deudores | Lo que te deben a vos (pendientes, historial de cobros) |
 | Estadísticas | Vista mensual navegable con historial completo |
@@ -646,10 +645,10 @@ user_id                → referencia a auth.users
 name                   → texto
 total_amount           → número
 remaining_amount       → número
-monthly_payment        → número o null. Cuota del plan de pago automático OPCIONAL (null = sin plan)
-auto_pay_start_year    → número o null. Año desde el que arranca el plan automático
-auto_pay_start_month   → número (1-12) o null
-auto_pay_start_day     → número (1-31) o null. Día del recordatorio; null = desde el 1° del mes
+auto_pay_amount        → número o null. Cuota del plan de pago automático OPCIONAL (null = sin plan). Es un recordatorio: el usuario confirma cada pago
+auto_pay_start_date    → fecha o null. Primer vencimiento del plan
+auto_pay_interval_unit → "day" | "month" o null. Unidad de la frecuencia
+auto_pay_interval_count → número o null. Cada cuántas unidades se repite (ej. 15 días, 2 meses)
 auto_pay_pillar_id     → referencia a pillars (requerido si hay plan automático)
 auto_pay_category_id   → referencia a categories, opcional (dentro de auto_pay_pillar_id)
 status                 → "active" | "paid" | "archived" (el usuario archiva una deuda ya pagada para sacarla de la vista, sin borrar su historial)
@@ -715,7 +714,7 @@ auth.users (Supabase)
 | Escenario | Regla |
 |---|---|
 | El usuario borra una subcategoría con gastos registrados | Los gastos históricos se conservan etiquetados como "categoría eliminada". No se borran. |
-| El usuario cambia el % de un pilar a mitad de mes con gastos ya registrados | Los gastos pasados no cambian. Solo se recalcula el saldo disponible del resto del mes. |
+| El usuario cambia el monto de un pilar a mitad de mes con gastos ya registrados | Los gastos pasados no cambian. Solo se recalcula el saldo disponible del resto del mes. |
 | El ingreso base es $0 | El sistema no deja avanzar en el onboarding sin un ingreso mayor a $0. |
 | Un pago de deuda deja el pilar/categoría elegido en negativo | Se ve reflejado como déficit del pilar, igual que cualquier otro exceso. No se bloquea. |
 | El usuario intenta registrar un pago de deuda mayor al saldo pendiente | El sistema no acepta un pago mayor al saldo pendiente. Muestra error (misma regla que con Deudores). |
