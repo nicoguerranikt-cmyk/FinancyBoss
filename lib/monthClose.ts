@@ -136,6 +136,9 @@ async function closeOneMonth(
     budgeted_amount: p.budget,
     carried_over: p.carriedOver,
     spent_amount: p.budget + p.carriedOver - p.saldo,
+    // El ingreso con el que se cerró este mes: Estadísticas lo lee para que
+    // cambiar el sueldo después no altere un mes que ya terminó (migración 0036).
+    income_amount: baseIncome,
   }))
   if (rows.length === 0) return
 

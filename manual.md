@@ -551,6 +551,7 @@ Primer uso de archivos en el proyecto (hasta acá todo era filas en tablas) — 
 - Una sola sección de Estadísticas con **selector de mes navegable**.
 - El dashboard principal cubre la vista del día actual en tiempo real — no se duplica en Estadísticas.
 - Sin estadísticas semanales en el MVP.
+- **Un mes cerrado no cambia aunque cambie tu configuración.** Al cerrar el mes se guarda su foto (`monthly_budgets`): presupuesto, arrastre y gasto de cada pilar, y el **ingreso** con el que se cerró (`income_amount`, migración 0036). Si después cambias tu sueldo de 3.000 a 4.000, septiembre sigue mostrando 3.000. El presupuesto de cada categoría de un mes pasado es lo que **se le repartió ese mes** (movimientos `is_allocation`), no el monto que tiene configurado hoy. Los meses cerrados antes de la migración 0036 se rellenaron con el ingreso que tenías al aplicarla.
 
 ### 8.2 Vista mensual — contenido
 
@@ -692,6 +693,7 @@ year            → número
 budgeted_amount → número
 spent_amount    → número
 carried_over    → número (acumulado del mes anterior)
+income_amount   → número o null. Ingreso base con el que se cerró el mes (migración 0036); null en filas anteriores sin dato
 created_at      → timestamp
 ```
 

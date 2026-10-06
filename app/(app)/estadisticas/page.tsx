@@ -21,6 +21,7 @@ import {
 import { computeDominoPillarAdjustments } from '@/lib/domino'
 import { isFixedExpenseScheduled, monthlyReserveAmount } from '@/lib/fixedExpense'
 import { closeElapsedMonths, getCarriedOverByPillarId } from '@/lib/monthClose'
+import { categoryBudgetsForMonth, incomeForMonth } from '@/lib/statsHistory'
 import EstadisticasView, {
   type CategoryStat,
   type DebtStat,
@@ -97,7 +98,7 @@ export default async function EstadisticasPage({
     supabase
       .from('categories')
       .select(
-        'id, name, pillar_id, fixed_amount, auto_repeat, fixed_start_date, fixed_interval_unit, fixed_interval_count, fixed_reserve_ahead, deleted_at'
+        'id, name, pillar_id, fixed_amount, is_general, auto_repeat, fixed_start_date, fixed_interval_unit, fixed_interval_count, fixed_reserve_ahead, deleted_at'
       )
       .eq('user_id', userId),
     supabase
@@ -116,7 +117,7 @@ export default async function EstadisticasPage({
     supabase.from('debtors').select('id, name, remaining_amount, status').eq('user_id', userId),
     supabase
       .from('monthly_budgets')
-      .select('pillar_id, year, month, budgeted_amount, carried_over, spent_amount')
+      .select('pillar_id, year, month, budgeted_amount, carried_over, spent_amount, income_amount')
       .eq('user_id', userId)
       .is('category_id', null),
   ])
@@ -210,7 +211,10 @@ export default async function EstadisticasPage({
   const extraIncome = allTx
     .filter((t) => t.type === 'extra_income' && !t.is_allocation)
     .reduce((sum, t) => sum + t.amount, 0)
-  const totalIncome = baseIncome + extraIncome
+  // Un mes cerrado usa el ingreso con el que se cerró, no el sueldo de hoy
+  // (ver lib/statsHistory.ts).
+  const storedIncome = (budgetHistory ?? []).find((r) => r.year === year && r.month === month)?.income_amount
+  const totalIncome = incomeForMonth({ isCurrentMonth, currentBaseIncome: baseIncome, storedIncome }) + extraIncome
 
   // ---------- Por subcategoría ----------
   const spentByCategory = new Map<string, number>()
@@ -218,13 +222,17 @@ export default async function EstadisticasPage({
     if (t.type !== 'expense' || !t.category_id) continue
     spentByCategory.set(t.category_id, (spentByCategory.get(t.category_id) ?? 0) + -t.amount)
   }
+  // Presupuesto de cada categoría EN ESE MES: lo que se le repartió, no su
+  // monto configurado hoy (ver lib/statsHistory.ts).
+  const generalCategoryIds = new Set((categories ?? []).filter((c) => c.is_general).map((c) => c.id))
+  const budgetByCategoryId = categoryBudgetsForMonth(allTx, generalCategoryIds)
   const categoryStats: CategoryStat[] = [...spentByCategory.entries()]
     .map(([categoryId, spent]) => {
       const category = categoryById[categoryId]
       return {
         name: category ? category.name + (category.deleted_at ? ' (eliminada)' : '') : 'Categoría eliminada',
         pillarLabel: category ? PILLAR_LABEL[typedPillars.find((p) => p.id === category.pillar_id)?.name ?? 'gasto'] : '—',
-        budgeted: category?.fixed_amount ?? null,
+        budgeted: budgetByCategoryId.get(categoryId) ?? null,
         spent,
       }
     })
