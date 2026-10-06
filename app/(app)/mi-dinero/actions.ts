@@ -2,7 +2,8 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { todayInBolivia, type PillarName } from '@/lib/dashboard'
+import { todayIn, type PillarName } from '@/lib/dashboard'
+import { getUserTimeZone } from '@/lib/userTimezone.server'
 import { EPSILON } from '@/lib/domino'
 import { isFixedExpenseScheduled, lastFixedExpenseOccurrence } from '@/lib/fixedExpense'
 import { validateRecurrenceSchedule, type RecurrenceUnit } from '@/lib/recurrence'
@@ -614,7 +615,8 @@ export async function confirmFixedExpense(input: { categoryId: string }): Promis
   if (!category.auto_repeat || !isFixedExpenseScheduled(category) || category.fixed_amount === null) {
     return { error: 'Esta categoría no tiene un plan automático.' }
   }
-  const dueDate = lastFixedExpenseOccurrence(category, todayInBolivia())
+  const timeZone = await getUserTimeZone(supabase, user.id)
+  const dueDate = lastFixedExpenseOccurrence(category, todayIn(timeZone))
   if (!dueDate) return { error: 'Todavía no te toca confirmar este gasto.' }
 
   // Solo un gasto (amount < 0) cuenta como "ya pagado": un reparto o ingreso

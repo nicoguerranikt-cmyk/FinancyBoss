@@ -2,7 +2,8 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { todayInBolivia } from '@/lib/dashboard'
+import { isValidTimeZone, todayIn } from '@/lib/dashboard'
+import { getUserTimeZone } from '@/lib/userTimezone.server'
 import { ensureMonthlyAllocation } from '@/lib/monthlyAllocation.server'
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>
@@ -10,9 +11,18 @@ type SupabaseClient = Awaited<ReturnType<typeof createClient>>
 async function writeProfileConfirmation(
   supabase: SupabaseClient,
   userId: string,
-  input: { name: string; baseIncome: number; autoRepeatIncome: boolean; username?: string | null }
+  input: {
+    name: string
+    baseIncome: number
+    autoRepeatIncome: boolean
+    username?: string | null
+    timeZone?: string
+  }
 ) {
-  const today = todayInBolivia()
+  // Si el usuario cambia su zona en este mismo guardado, "este mes" ya es el
+  // de la zona nueva.
+  const timeZone = input.timeZone ?? (await getUserTimeZone(supabase, userId))
+  const today = todayIn(timeZone)
   const patch: Record<string, unknown> = {
     name: input.name,
     base_income: input.baseIncome,
@@ -20,6 +30,7 @@ async function writeProfileConfirmation(
     income_confirmed_year: today.year,
     income_confirmed_month: today.month,
   }
+  if (input.timeZone !== undefined) patch.timezone = input.timeZone
   // username es un campo aparte del resto (no tiene que ver con confirmar
   // el ingreso): si el que llama no lo mandó — ej. IncomeConfirmBanner, que
   // no tiene ese campo — no lo tocamos, para no borrarlo sin querer.
@@ -36,6 +47,8 @@ export type UpdateProfileInput = {
   // Nullable: null/'' borra el username (vuelve a no tener uno). Migración
   // 0024 — se usa para vincular deudas sin el email de la otra persona.
   username?: string | null
+  // Zona horaria IANA (ej. "America/La_Paz"). Si no viene, no se toca.
+  timeZone?: string
 }
 
 // manual.md §3.1: el ingreso base se puede ajustar cuando el usuario quiera,
@@ -52,6 +65,10 @@ export async function updateProfile(input: UpdateProfileInput): Promise<{ error?
     if (usernameInput !== null && !USERNAME_PATTERN.test(usernameInput)) {
       return { error: 'El nombre de usuario debe tener 3-20 caracteres: letras, números o guión bajo.' }
     }
+  }
+
+  if (input.timeZone !== undefined && !isValidTimeZone(input.timeZone)) {
+    return { error: 'Esa zona horaria no es válida.' }
   }
 
   const supabase = await createClient()

@@ -1,6 +1,7 @@
 // Tab "Más" (manual.md sección 9): agrupa Perfil y Configuración.
 
 import { createClient } from '@/lib/supabase/server'
+import { resolveTimeZone } from '@/lib/dashboard'
 import MasClient from './MasClient'
 import PageReadySignal from '../PageReadySignal'
 
@@ -14,7 +15,7 @@ export default async function MasPage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('name, base_income, auto_repeat_income, username, payment_qr_path')
+    .select('name, base_income, auto_repeat_income, username, payment_qr_path, timezone')
     .eq('id', userId)
     .single()
 
@@ -37,6 +38,7 @@ export default async function MasPage() {
         baseIncome={profile?.base_income ?? 0}
         autoRepeatIncome={profile?.auto_repeat_income ?? true}
         username={profile?.username ?? null}
+        timeZone={resolveTimeZone(profile?.timezone)}
         qrUrl={qrUrl}
       />
     </div>

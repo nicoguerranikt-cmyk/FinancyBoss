@@ -9,11 +9,12 @@
 import { createClient } from '@/lib/supabase/server'
 import {
   computeDashboard,
-  dateInBolivia,
+  dateIn,
   daysInMonth,
   monthRangeFor,
   monthRangeUtcInstantFor,
-  todayInBolivia,
+  resolveTimeZone,
+  todayIn,
   type PillarName,
   type PillarRow,
 } from '@/lib/dashboard'
@@ -63,13 +64,14 @@ export default async function EstadisticasPage({
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('base_income, created_at')
+    .select('base_income, created_at, timezone')
     .eq('id', userId)
     .single()
   const baseIncome = profile?.base_income ?? 0
 
-  const today = todayInBolivia()
-  const earliest = profile?.created_at ? dateInBolivia(new Date(profile.created_at)) : today
+  const timeZone = resolveTimeZone(profile?.timezone)
+  const today = todayIn(timeZone)
+  const earliest = profile?.created_at ? dateIn(new Date(profile.created_at), timeZone) : today
   const minAbs = toAbsoluteMonth(earliest.year, earliest.month)
   const maxAbs = toAbsoluteMonth(today.year, today.month)
 
@@ -80,7 +82,7 @@ export default async function EstadisticasPage({
   const isCurrentMonth = clampedAbs === maxAbs
 
   const { start, end } = monthRangeFor(year, month)
-  const { startUtc, endUtc } = monthRangeUtcInstantFor(year, month)
+  const { startUtc, endUtc } = monthRangeUtcInstantFor(year, month, timeZone)
 
   const [
     { data: pillars },

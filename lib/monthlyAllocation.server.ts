@@ -16,7 +16,7 @@
 // que cada llamador la repita.
 
 import type { createClient } from '@/lib/supabase/server'
-import { incomeCoverage, monthRangeFor, todayInBolivia } from '@/lib/dashboard'
+import { incomeCoverage, monthRangeFor, resolveTimeZone, todayIn } from '@/lib/dashboard'
 import { distributeCents } from '@/lib/money'
 import { computeMonthlyAllocation, type AllocationCategory } from '@/lib/monthlyAllocation'
 
@@ -35,12 +35,12 @@ export async function ensureMonthlyAllocation(
 ): Promise<void> {
   const { data: profile } = await supabase
     .from('profiles')
-    .select('base_income, auto_repeat_income, income_confirmed_year, income_confirmed_month')
+    .select('base_income, auto_repeat_income, income_confirmed_year, income_confirmed_month, timezone')
     .eq('id', userId)
     .single()
   if (!profile) return
 
-  const today = todayInBolivia()
+  const today = todayIn(resolveTimeZone(profile.timezone))
   const confirmedThisMonth =
     profile.auto_repeat_income ||
     (profile.income_confirmed_year === today.year && profile.income_confirmed_month === today.month)

@@ -14,10 +14,11 @@ import type { createClient } from '@/lib/supabase/server'
 import {
   computeDashboard,
   daysInMonth,
-  dateInBolivia,
+  dateIn,
   monthRangeFor,
   monthRangeUtcInstantFor,
-  todayInBolivia,
+  resolveTimeZone,
+  todayIn,
   type PillarRow,
   type TransactionRow,
 } from '@/lib/dashboard'
@@ -61,10 +62,11 @@ async function closeOneMonth(
   userId: string,
   year: number,
   month: number,
-  baseIncome: number
+  baseIncome: number,
+  timeZone: string
 ): Promise<void> {
   const { start, end } = monthRangeFor(year, month)
-  const { startUtc, endUtc } = monthRangeUtcInstantFor(year, month)
+  const { startUtc, endUtc } = monthRangeUtcInstantFor(year, month, timeZone)
 
   const [{ data: pillars }, { data: categories }, { data: transactions }, { data: dominoEvents }, carriedOverByPillarId] =
     await Promise.all([
@@ -193,8 +195,13 @@ async function archivePaidDebtsAndDebtors(supabase: SupabaseClient, userId: stri
 // Cierra, en orden cronológico, todos los meses ya terminados que todavía
 // no tengan fila en monthly_budgets.
 export async function closeElapsedMonths(supabase: SupabaseClient, userId: string): Promise<void> {
-  const { data: profile } = await supabase.from('profiles').select('base_income, created_at').eq('id', userId).single()
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('base_income, created_at, timezone')
+    .eq('id', userId)
+    .single()
   if (!profile) return
+  const timeZone = resolveTimeZone(profile.timezone)
 
   const { data: lastClosed } = await supabase
     .from('monthly_budgets')
@@ -208,13 +215,13 @@ export async function closeElapsedMonths(supabase: SupabaseClient, userId: strin
 
   let cursor = lastClosed
     ? nextMonth(lastClosed.year, lastClosed.month)
-    : dateInBolivia(new Date(profile.created_at))
+    : dateIn(new Date(profile.created_at), timeZone)
 
-  const today = todayInBolivia()
+  const today = todayIn(timeZone)
   let closedAny = false
 
   while (cursor.year < today.year || (cursor.year === today.year && cursor.month < today.month)) {
-    await closeOneMonth(supabase, userId, cursor.year, cursor.month, profile.base_income)
+    await closeOneMonth(supabase, userId, cursor.year, cursor.month, profile.base_income, timeZone)
     closedAny = true
     cursor = nextMonth(cursor.year, cursor.month)
   }

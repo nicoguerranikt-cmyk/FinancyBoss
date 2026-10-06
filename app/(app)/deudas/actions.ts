@@ -2,7 +2,8 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { todayInBolivia } from '@/lib/dashboard'
+import { todayIn } from '@/lib/dashboard'
+import { getUserTimeZone } from '@/lib/userTimezone.server'
 import {
   applyDebtPayment,
   lastDueOccurrence,
@@ -181,6 +182,7 @@ export async function registerPayment(input: RegisterPaymentInput): Promise<{ er
   if (source.error) return { error: source.error }
 
   const { remainingAmount, status } = applyDebtPayment(debt, input.amount)
+  const timeZone = await getUserTimeZone(supabase, user.id)
 
   const { error } = await supabase.from('transactions').insert({
     user_id: user.id,
@@ -190,7 +192,7 @@ export async function registerPayment(input: RegisterPaymentInput): Promise<{ er
     amount: -input.amount,
     type: 'expense' as const,
     description: null,
-    date: todayInBolivia().iso,
+    date: todayIn(timeZone).iso,
   })
   if (error) {
     console.error('[registerPayment] transactions insert error:', {
@@ -246,16 +248,21 @@ export async function confirmAutoPayment(input: { debtId: string }): Promise<{ e
   if (!debt) return { error: 'Deuda inválida.' }
   if (debt.status === 'paid') return { error: 'Esta deuda ya está saldada.' }
   // No confiamos en que el cliente solo muestre el botón cuando corresponde.
-  const dueDate = debt.auto_pay_pillar_id ? lastDueOccurrence(debt, todayInBolivia()) : null
+  const timeZone = await getUserTimeZone(supabase, user.id)
+  const today = todayIn(timeZone)
+  const dueDate = debt.auto_pay_pillar_id ? lastDueOccurrence(debt, today) : null
   if (!dueDate) return { error: 'Todavía no te toca confirmar esta cuota.' }
 
+  // limit(1) y no maybeSingle(): con más de una fila que coincida,
+  // maybeSingle() da error, existing queda vacío y se dejaría pasar un pago
+  // duplicado.
   const { data: existing } = await supabase
     .from('transactions')
     .select('id')
     .eq('debt_id', debt.id)
     .gte('date', dueDate)
-    .maybeSingle()
-  if (existing) return { error: 'Ya confirmaste esta cuota.' }
+    .limit(1)
+  if (existing && existing.length > 0) return { error: 'Ya confirmaste esta cuota.' }
 
   const amount = Math.min(debt.auto_pay_amount as number, debt.remaining_amount)
   const { remainingAmount, status } = applyDebtPayment(debt, amount)
@@ -268,7 +275,7 @@ export async function confirmAutoPayment(input: { debtId: string }): Promise<{ e
     amount: -amount,
     type: 'expense' as const,
     description: null,
-    date: todayInBolivia().iso,
+    date: today.iso,
   })
   if (error) {
     console.error('[confirmAutoPayment] transactions insert error:', {

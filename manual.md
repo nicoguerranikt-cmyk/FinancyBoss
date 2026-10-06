@@ -173,6 +173,16 @@ La pantalla de Configuración aclara esta distinción con un texto debajo del ca
 - Default: toggle activado.
 - Desde la migración 0020 (pilares con monto fijo, no %), confirmar el ingreso de un mes es un solo paso — ya no hay una pantalla de "revisar cómo se reparte", porque los montos de pilares y categorías son fijos y no dependen de cuánto se confirme cada mes (ver §2.1 sobre qué pasa si el ingreso baja por debajo de lo que ya suman los pilares).
 
+### 3.1.1 Zona horaria
+
+- Cada usuario guarda **su zona horaria** (`profiles.timezone`, migración 0035; nombre IANA, ej. `America/La_Paz`). Los usuarios que ya existían quedan en `America/La_Paz`.
+- Define qué es **"hoy"** y dónde **empieza y termina cada mes**: la fecha de cada movimiento, el cierre de mes, el presupuesto diario, los vencimientos de gastos fijos y deudas. En la app se calcula con `todayIn(zona)` (`lib/dashboard.ts`) y en la base con `user_today()`; nunca con `current_date` ni con una zona fija.
+- Se **detecta una vez**, en el onboarding, con la zona del dispositivo, y se puede **cambiar en Más → Configuración** (también hay un botón "Usar la de mi dispositivo").
+- No se sigue al dispositivo en cada uso a propósito: si el fin de mes se moviera al viajar, un movimiento podría caer en otro mes y los meses ya cerrados quedarían inconsistentes.
+- Cambiar la zona **no mueve** los movimientos ya guardados ni reabre los meses cerrados: solo afecta lo que se registre o calcule de ahí en adelante.
+- Soporta zonas con horario de verano: el inicio de cada mes se calcula a la medianoche local de esa fecha.
+- Solo es la hora: la moneda sigue siendo Bs (ver §1).
+
 ### 3.2 Ingresos extra
 
 - El usuario puede registrar ingresos extra en cualquier momento del mes (freelance, bonos, regalos, etc.).
@@ -583,7 +593,7 @@ Donde **Más** agrupa: Perfil y Configuración.
 | Deudas | Lo que vos debés (cuotas, progreso, deudas saldadas) |
 | Deudores | Lo que te deben a vos (pendientes, historial de cobros) |
 | Estadísticas | Vista mensual navegable con historial completo |
-| Más | Perfil, configuración, toggle de ingreso automático |
+| Más | Perfil, configuración, toggle de ingreso automático, zona horaria |
 
 ---
 

@@ -3,7 +3,8 @@
 // (ver app/(app)/deudores/actions.ts registerCollection).
 
 import { createClient } from '@/lib/supabase/server'
-import { todayInBolivia } from '@/lib/dashboard'
+import { todayIn } from '@/lib/dashboard'
+import { getUserTimeZone } from '@/lib/userTimezone.server'
 import SharedDebtsSection, { type PendingSharedPayment, type SharedDebtRow } from '../shared-debts/SharedDebtsSection'
 import DeudoresClient from './DeudoresClient'
 import NewDebtorForm from './NewDebtorForm'
@@ -16,7 +17,7 @@ export default async function DeudoresPage() {
   } = await supabase.auth.getUser()
   // El layout ya garantiza que hay sesión y perfil; user siempre existe acá.
   const userId = user!.id
-  const todayIso = todayInBolivia().iso
+  const todayIso = todayIn(await getUserTimeZone(supabase, userId)).iso
 
   const [{ data: debtors }, { data: pillars }, { data: categories }, { data: sharedRows }] = await Promise.all([
     supabase

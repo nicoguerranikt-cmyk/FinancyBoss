@@ -2,7 +2,8 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { todayInBolivia } from '@/lib/dashboard'
+import { todayIn } from '@/lib/dashboard'
+import { getUserTimeZone } from '@/lib/userTimezone.server'
 import { applyCollection } from '@/lib/debtors'
 import { EPSILON } from '@/lib/domino'
 import { validatePillarSource } from '@/lib/pillarSource'
@@ -93,6 +94,7 @@ export async function registerCollection(input: RegisterCollectionInput): Promis
   if (source.error) return { error: source.error }
 
   const { remainingAmount, status } = applyCollection(debtor, input.amount)
+  const timeZone = await getUserTimeZone(supabase, user.id)
 
   const { error } = await supabase.from('transactions').insert({
     user_id: user.id,
@@ -102,7 +104,7 @@ export async function registerCollection(input: RegisterCollectionInput): Promis
     amount: input.amount,
     type: 'extra_income' as const,
     description: null,
-    date: todayInBolivia().iso,
+    date: todayIn(timeZone).iso,
   })
   if (error) {
     console.error('[registerCollection] transactions insert error:', {

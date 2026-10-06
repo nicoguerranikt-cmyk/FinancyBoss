@@ -5,7 +5,8 @@
 // a mano, apilado por fecha.
 
 import { createClient } from '@/lib/supabase/server'
-import { daysInMonth, todayInBolivia } from '@/lib/dashboard'
+import { daysInMonth, todayIn } from '@/lib/dashboard'
+import { getUserTimeZone } from '@/lib/userTimezone.server'
 import { formatBs } from '@/lib/format'
 import Link from '../../AppLink'
 import PageReadySignal from '../../PageReadySignal'
@@ -47,7 +48,7 @@ export default async function DineroLibrePage() {
   const currentMonthFreeMoney = Math.max(0, (profile?.base_income ?? 0) - committedThisMonth)
   const total = accumulated + currentMonthFreeMoney
 
-  const today = todayInBolivia()
+  const today = todayIn(await getUserTimeZone(supabase, userId))
   const daysRemaining = daysInMonth(today.year, today.month) - today.day + 1
   const weeksRemaining = Math.max(1, Math.ceil(daysRemaining / 7))
   const biweeksRemaining = Math.max(1, Math.ceil(daysRemaining / 14))

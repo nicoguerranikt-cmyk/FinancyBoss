@@ -10,11 +10,12 @@ import {
   computeDashboard,
   daysInMonth,
   incomeCoverage,
-  monthRangeInBolivia,
+  monthRangeIn,
   monthRangeUtcInstant,
-  todayInBolivia,
+  todayIn,
   type PillarName,
 } from '@/lib/dashboard'
+import { getUserTimeZone } from '@/lib/userTimezone.server'
 import { lastDueOccurrence } from '@/lib/debts'
 import { computeDominoPillarAdjustments } from '@/lib/domino'
 import {
@@ -51,9 +52,10 @@ export default async function DashboardPage() {
   // de calcular nada del mes en curso para que el arrastre esté listo.
   await closeElapsedMonths(supabase, userId)
 
-  const { start, end } = monthRangeInBolivia()
-  const { startUtc, endUtc } = monthRangeUtcInstant()
-  const today = todayInBolivia()
+  const timeZone = await getUserTimeZone(supabase, userId)
+  const { start, end } = monthRangeIn(timeZone)
+  const { startUtc, endUtc } = monthRangeUtcInstant(timeZone)
+  const today = todayIn(timeZone)
 
   // Todas las categorías del usuario (sin filtrar deleted_at: una categoría
   // borrada que fue afectada por un dominó igual tiene que poder mapearse a
@@ -212,6 +214,7 @@ export default async function DashboardPage() {
     reservedCategoryIds,
     dominoPillarAdjustments,
     carriedOverByPillarId,
+    today,
   })
 
   const activeCategories = (categories ?? []).filter((c) => !c.deleted_at)

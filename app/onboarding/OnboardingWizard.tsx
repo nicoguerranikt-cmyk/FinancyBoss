@@ -133,6 +133,9 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
       income: incomeNumber,
       autoRepeat,
       categories,
+      // La zona horaria del dispositivo: define qué es "hoy" y dónde termina
+      // cada mes para este usuario.
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     })
     // Si hubo éxito, completeOnboarding redirige y no llegamos acá.
     if (res?.error) {

@@ -2,7 +2,7 @@
 
 // Más (manual.md v2.0, sección 9): Perfil + Configuración.
 
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { logout } from '@/app/login/actions'
 import { removePaymentQr, updateProfile, uploadPaymentQr } from './actions'
 
@@ -19,6 +19,7 @@ export default function MasClient({
   baseIncome: initialBaseIncome,
   autoRepeatIncome: initialAutoRepeat,
   username: initialUsername,
+  timeZone: initialTimeZone,
   qrUrl,
 }: {
   email: string
@@ -26,12 +27,20 @@ export default function MasClient({
   baseIncome: number
   autoRepeatIncome: boolean
   username: string | null
+  timeZone: string
   qrUrl: string | null
 }) {
   const [name, setName] = useState(initialName)
   const [baseIncome, setBaseIncome] = useState(String(initialBaseIncome))
   const [autoRepeatIncome, setAutoRepeatIncome] = useState(initialAutoRepeat)
   const [username, setUsername] = useState(initialUsername ?? '')
+  const [timeZone, setTimeZone] = useState(initialTimeZone)
+  // Todas las zonas IANA que conoce el navegador, con la guardada siempre
+  // incluida (por si el navegador no la lista).
+  const timeZoneOptions = useMemo(() => {
+    const all = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : []
+    return all.includes(initialTimeZone) ? all : [initialTimeZone, ...all]
+  }, [initialTimeZone])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
@@ -85,6 +94,7 @@ export default function MasClient({
         baseIncome: Number(baseIncome),
         autoRepeatIncome,
         username,
+        timeZone,
       })
       if (res.error) {
         setError(res.error)
@@ -241,6 +251,35 @@ export default function MasClient({
               empezar cada mes.
             </p>
           )}
+
+          <div className="flex flex-col gap-1">
+            <label htmlFor="timeZone" className="text-sm font-medium">
+              Zona horaria
+            </label>
+            <select
+              id="timeZone"
+              value={timeZone}
+              onChange={(e) => setTimeZone(e.target.value)}
+              className={inputClass}
+            >
+              {timeZoneOptions.map((zone) => (
+                <option key={zone} value={zone}>
+                  {zone.replaceAll('_', ' ')}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone)}
+              className="self-start text-xs font-medium text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+            >
+              Usar la de mi dispositivo
+            </button>
+            <p className="text-xs text-zinc-500">
+              Define qué es &quot;hoy&quot; y dónde empieza y termina cada mes para ti. Cambiarla no mueve los
+              movimientos ya guardados ni los meses ya cerrados.
+            </p>
+          </div>
         </div>
 
         {error && (

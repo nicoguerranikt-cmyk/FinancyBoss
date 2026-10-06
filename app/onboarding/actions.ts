@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { isValidTimeZone } from '@/lib/dashboard'
 
 export type PillarKey = 'ahorro' | 'gasto' | 'inversion'
 
@@ -13,6 +14,10 @@ export type OnboardingInput = {
   // cada pilar sale de sumar el de sus categorías (amount ausente o 0 = sin
   // monto fijo, queda como bolsa variable de ese pilar).
   categories: { pillar: PillarKey; name: string; amount?: number }[]
+  // Zona horaria detectada por el navegador (ej. "America/La_Paz"). Es
+  // opcional: si falta o es inválida queda la de Bolivia (la del default de la
+  // columna, migración 0035) y se puede cambiar después en Más → Perfil.
+  timeZone?: string
 }
 
 export async function completeOnboarding(
@@ -68,6 +73,22 @@ export async function completeOnboarding(
       categoriesEnviadas: input.categories,
     })
     return { error: 'No pudimos guardar tu configuración. Prueba de nuevo.' }
+  }
+
+  // Zona horaria del usuario. Va aparte de la transacción de arriba a
+  // propósito: si falla, el onboarding no se pierde — queda la de Bolivia y
+  // la puede cambiar en Más → Perfil.
+  if (input.timeZone && isValidTimeZone(input.timeZone)) {
+    const { error: timeZoneError } = await supabase
+      .from('profiles')
+      .update({ timezone: input.timeZone })
+      .eq('id', user.id)
+    if (timeZoneError) {
+      console.error('[completeOnboarding] timezone update error:', {
+        message: timeZoneError.message,
+        code: timeZoneError.code,
+      })
+    }
   }
 
   // Limpiamos el cache y entramos al dashboard.

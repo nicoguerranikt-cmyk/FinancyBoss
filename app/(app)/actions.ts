@@ -2,7 +2,8 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { computeDashboard, daysInMonth, monthRangeInBolivia, monthRangeUtcInstant, todayInBolivia } from '@/lib/dashboard'
+import { computeDashboard, daysInMonth, monthRangeIn, monthRangeUtcInstant, todayIn } from '@/lib/dashboard'
+import { getUserTimeZone } from '@/lib/userTimezone.server'
 import { EPSILON, buildCaso1Message, computeDominoPillarAdjustments } from '@/lib/domino'
 import { isFixedExpenseScheduled, monthlyReserveAmount } from '@/lib/fixedExpense'
 import { formatBs } from '@/lib/format'
@@ -89,6 +90,7 @@ export async function registerTransaction(
   }
 
   const signedAmount = input.type === 'expense' ? -input.amount : input.amount
+  const timeZone = await getUserTimeZone(supabase, user.id)
 
   const { data: inserted, error } = await supabase
     .from('transactions')
@@ -99,8 +101,8 @@ export async function registerTransaction(
       amount: signedAmount,
       type: input.type,
       description: input.description?.trim() || null,
-      // Fecha en huso horario de Bolivia, no el del servidor (ver lib/dashboard.ts).
-      date: todayInBolivia().iso,
+      // Fecha en la zona horaria del usuario, no la del servidor (ver lib/dashboard.ts).
+      date: todayIn(timeZone).iso,
     })
     .select('id')
     .single()
@@ -139,9 +141,10 @@ async function checkDominoAfterTransaction(
   supabase: Awaited<ReturnType<typeof createClient>>,
   ctx: { userId: string; transactionId: string; sourceCategoryId: string | null }
 ): Promise<DominoOutcome | undefined> {
-  const { start, end } = monthRangeInBolivia()
-  const { startUtc, endUtc } = monthRangeUtcInstant()
-  const today = todayInBolivia()
+  const timeZone = await getUserTimeZone(supabase, ctx.userId)
+  const { start, end } = monthRangeIn(timeZone)
+  const { startUtc, endUtc } = monthRangeUtcInstant(timeZone)
+  const today = todayIn(timeZone)
   const todayIso = today.iso
 
   const [{ data: profile }, { data: pillars }, { data: categories }, { data: transactions }, { data: dominoEvents }, carriedOverByPillarId] =
@@ -210,6 +213,7 @@ async function checkDominoAfterTransaction(
     reservedCategoryIds,
     dominoPillarAdjustments,
     carriedOverByPillarId,
+    today,
   }
   const dashboardAfter = computeDashboard({ ...base, transactionsThisMonth: allTx })
   const dashboardBefore = computeDashboard({ ...base, transactionsThisMonth: beforeTodayTx })
@@ -262,9 +266,10 @@ async function computePillarSaldoThisMonth(
   userId: string,
   pillarId: string
 ): Promise<number> {
-  const { start, end } = monthRangeInBolivia()
-  const { startUtc, endUtc } = monthRangeUtcInstant()
-  const today = todayInBolivia()
+  const timeZone = await getUserTimeZone(supabase, userId)
+  const { start, end } = monthRangeIn(timeZone)
+  const { startUtc, endUtc } = monthRangeUtcInstant(timeZone)
+  const today = todayIn(timeZone)
 
   const [{ data: profile }, { data: pillars }, { data: categories }, { data: transactions }, { data: dominoEvents }, carriedOverByPillarId] =
     await Promise.all([
@@ -321,6 +326,7 @@ async function computePillarSaldoThisMonth(
     reservedCategoryIds,
     dominoPillarAdjustments,
     carriedOverByPillarId,
+    today,
   })
 
   return dashboard.pillars.find((p) => p.id === pillarId)?.saldo ?? 0

@@ -5,7 +5,8 @@
 
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { todayInBolivia } from '@/lib/dashboard'
+import { todayIn } from '@/lib/dashboard'
+import { getUserTimeZone } from '@/lib/userTimezone.server'
 import { isFixedExpenseScheduled, lastFixedExpenseOccurrence } from '@/lib/fixedExpense'
 import { formatBs } from '@/lib/format'
 import Link from '../../../AppLink'
@@ -48,7 +49,7 @@ export default async function GastosFijosPage({
   // Gasto fijo con cuota vencida sin confirmar (ver confirmFixedExpense,
   // mi-dinero/actions.ts, y el aviso del Dashboard) — mismo chequeo, para
   // marcar acá cuál puntualmente está pendiente.
-  const today = todayInBolivia()
+  const today = todayIn(await getUserTimeZone(supabase, userId))
   const pendingConfirmationByCategoryId: Record<string, boolean> = {}
   for (const c of data.fixedCategories) {
     if (!c.auto_repeat || !isFixedExpenseScheduled(c)) continue

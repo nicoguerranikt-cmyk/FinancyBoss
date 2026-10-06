@@ -5,7 +5,8 @@
 
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { todayInBolivia } from '@/lib/dashboard'
+import { todayIn } from '@/lib/dashboard'
+import { getUserTimeZone } from '@/lib/userTimezone.server'
 import Link from '../../../AppLink'
 import PageReadySignal from '../../../PageReadySignal'
 import UsdSavingsClient from './UsdSavingsClient'
@@ -61,7 +62,7 @@ export default async function UsdSavingsPage({ params }: { params: Promise<{ pil
         balanceUsd={balanceUsd}
         movements={movements ?? []}
         categories={categories ?? []}
-        todayIso={todayInBolivia().iso}
+        todayIso={todayIn(await getUserTimeZone(supabase, userId)).iso}
       />
     </div>
   )

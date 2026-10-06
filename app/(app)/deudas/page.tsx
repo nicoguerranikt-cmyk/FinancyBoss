@@ -4,7 +4,8 @@
 // ("Ya la pagué", ver confirmAutoPayment en actions.ts).
 
 import { createClient } from '@/lib/supabase/server'
-import { dateInBolivia, todayInBolivia } from '@/lib/dashboard'
+import { dateIn, todayIn } from '@/lib/dashboard'
+import { getUserTimeZone } from '@/lib/userTimezone.server'
 import { lastDueOccurrence } from '@/lib/debts'
 import SharedDebtsSection, {
   type PendingSharedPayment,
@@ -23,7 +24,8 @@ export default async function DeudasPage() {
   // El layout ya garantiza que hay sesión y perfil; user siempre existe acá.
   const userId = user!.id
 
-  const today = todayInBolivia()
+  const timeZone = await getUserTimeZone(supabase, userId)
+  const today = todayIn(timeZone)
 
   const [{ data: debts }, { data: pillars }, { data: categories }, { data: sharedRows }] = await Promise.all([
     supabase
@@ -102,7 +104,7 @@ export default async function DeudasPage() {
       .in('shared_debt_id', sharedDueIds)
     const lastProposedById: Record<string, string> = {}
     for (const p of myProposals ?? []) {
-      const proposedDate = dateInBolivia(new Date(p.created_at))
+      const proposedDate = dateIn(new Date(p.created_at), timeZone)
       const pad = (n: number) => String(n).padStart(2, '0')
       const iso = `${proposedDate.year}-${pad(proposedDate.month)}-${pad(proposedDate.day)}`
       if (!lastProposedById[p.shared_debt_id] || iso > lastProposedById[p.shared_debt_id]) {

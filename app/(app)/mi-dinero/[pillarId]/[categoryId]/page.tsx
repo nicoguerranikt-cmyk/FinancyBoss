@@ -12,7 +12,8 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import Link from '../../../AppLink'
-import { monthRangeInBolivia, todayInBolivia, type PillarName } from '@/lib/dashboard'
+import { monthRangeIn, todayIn, type PillarName } from '@/lib/dashboard'
+import { getUserTimeZone } from '@/lib/userTimezone.server'
 import {
   fixedExpenseExtraThisMonth,
   isFixedExpensePending,
@@ -109,7 +110,8 @@ export default async function CategoryDetailPage({
   // auto-insert silencioso al recordatorio+confirmar, ver confirmFixedExpense
   // en mi-dinero/actions.ts y el aviso del Dashboard). Mismo chequeo que hace
   // esa action (última transacción vs. la fecha que ya corresponde).
-  const today = todayInBolivia()
+  const timeZone = await getUserTimeZone(supabase, userId)
+  const today = todayIn(timeZone)
   let pendingFixedConfirmation = false
   if (pillar.name === 'gasto' && category.auto_repeat && isFixedExpenseScheduled(category)) {
     const dueDate = lastFixedExpenseOccurrence(category, today)
@@ -131,7 +133,7 @@ export default async function CategoryDetailPage({
     status: 'pendiente' | 'pagado' | 'programado' | 'agotado' | 'disponible'
   } | null = null
   if (pillar.name === 'gasto' && category.fixed_amount !== null) {
-    const { start, end } = monthRangeInBolivia()
+    const { start, end } = monthRangeIn(timeZone)
     const thisMonthTx = (history ?? []).filter((t) => t.date >= start && t.date <= end)
     const extraThisMonth = fixedExpenseExtraThisMonth(thisMonthTx)
     const used = thisMonthTx.filter((t) => t.amount < 0).reduce((s, t) => s + -t.amount, 0)

@@ -7,7 +7,8 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { todayInBolivia } from '@/lib/dashboard'
+import { todayIn } from '@/lib/dashboard'
+import { getUserTimeZone } from '@/lib/userTimezone.server'
 import { validateAutoPayFrequency, type AutoPayFrequencyInput } from '@/lib/debts'
 import { EPSILON } from '@/lib/domino'
 import { validatePillarSource } from '@/lib/pillarSource'
@@ -347,7 +348,7 @@ export async function confirmSharedPayment(input: ConfirmSharedPaymentInput): Pr
     p_payment_id: input.paymentId,
     p_confirmer_pillar_id: source.pillarId,
     p_confirmer_category_id: source.categoryId,
-    p_date: todayInBolivia().iso,
+    p_date: todayIn(await getUserTimeZone(supabase, user.id)).iso,
   })
   if (error) {
     console.error('[confirmSharedPayment] rpc error:', {

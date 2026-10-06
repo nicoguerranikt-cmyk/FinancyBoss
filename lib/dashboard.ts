@@ -24,14 +24,37 @@ export type TransactionRow = {
   is_allocation: boolean
 }
 
-const BOLIVIA_TZ = 'America/La_Paz'
+// Zona horaria por defecto: la de Bolivia (UTC-4, sin horario de verano). Es
+// la que tienen los usuarios existentes; cada usuario guarda la suya en
+// profiles.timezone (migración 0035) y todas las funciones de abajo la
+// reciben. Nunca se usa current_date de Postgres ni new Date() a secas: el
+// servidor de Supabase corre en UTC y "hoy" tiene que ser el del usuario.
+export const DEFAULT_TIME_ZONE = 'America/La_Paz'
 
-// Bolivia no tiene horario de verano (UTC-4 fijo), pero el servidor de
-// Supabase corre en UTC: hay que calcular "hoy" en el huso del usuario de
-// forma explícita, nunca con current_date de Postgres ni new Date() a secas.
-export function todayInBolivia(): { year: number; month: number; day: number; iso: string } {
+// ¿Es un nombre de zona horaria IANA que este runtime entiende? (ej.
+// "America/La_Paz"). Se usa para validar lo que llega del navegador/perfil.
+export function isValidTimeZone(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone })
+    return true
+  } catch {
+    return false
+  }
+}
+
+// La zona guardada en el perfil si es válida; si falta o es inválida, la de
+// Bolivia — así una fila rara nunca rompe una pantalla.
+export function resolveTimeZone(timeZone: string | null | undefined): string {
+  return timeZone && isValidTimeZone(timeZone) ? timeZone : DEFAULT_TIME_ZONE
+}
+
+// "Hoy" en la zona del usuario. `now` solo se pasa en los tests.
+export function todayIn(
+  timeZone: string = DEFAULT_TIME_ZONE,
+  now: Date = new Date()
+): { year: number; month: number; day: number; iso: string } {
   // 'en-CA' da directo el formato YYYY-MM-DD.
-  const iso = new Intl.DateTimeFormat('en-CA', { timeZone: BOLIVIA_TZ }).format(new Date())
+  const iso = new Intl.DateTimeFormat('en-CA', { timeZone }).format(now)
   const [year, month, day] = iso.split('-').map(Number)
   return { year, month, day, iso }
 }
@@ -40,12 +63,42 @@ export function daysInMonth(year: number, month1to12: number): number {
   return new Date(year, month1to12, 0).getDate()
 }
 
-// Igual que todayInBolivia(), pero para convertir un Date cualquiera (ej.
-// profiles.created_at) a año/mes/día en huso boliviano.
-export function dateInBolivia(date: Date): { year: number; month: number; day: number } {
-  const iso = new Intl.DateTimeFormat('en-CA', { timeZone: BOLIVIA_TZ }).format(date)
+// Igual que todayIn(), pero para convertir un Date cualquiera (ej.
+// profiles.created_at) a año/mes/día en la zona del usuario.
+export function dateIn(
+  date: Date,
+  timeZone: string = DEFAULT_TIME_ZONE
+): { year: number; month: number; day: number } {
+  const iso = new Intl.DateTimeFormat('en-CA', { timeZone }).format(date)
   const [year, month, day] = iso.split('-').map(Number)
   return { year, month, day }
+}
+
+// Diferencia (en ms) entre la hora local de la zona y UTC en un instante dado.
+// Cambia durante el año en zonas con horario de verano.
+function zoneOffsetMs(timeZone: string, instant: Date): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(instant)
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value)
+  const localAsUtc = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'))
+  return localAsUtc - Math.floor(instant.getTime() / 1000) * 1000
+}
+
+// Instante UTC en que empieza el día 1 de un mes (00:00 hora local de la zona).
+function startOfMonthUtc(year: number, month: number, timeZone: string): Date {
+  const localMidnightAsUtc = Date.UTC(year, month - 1, 1)
+  // La diferencia con UTC puede ser otra justo en ese instante (cambio de
+  // horario de verano): se recalcula una vez con el instante ya corregido.
+  const first = localMidnightAsUtc - zoneOffsetMs(timeZone, new Date(localMidnightAsUtc))
+  return new Date(localMidnightAsUtc - zoneOffsetMs(timeZone, new Date(first)))
 }
 
 // Rango [primer día, último día] de un mes dado (hora boliviana), para
@@ -59,26 +112,31 @@ export function monthRangeFor(year: number, month: number): { start: string; end
   }
 }
 
-export function monthRangeInBolivia(): { start: string; end: string } {
-  const { year, month } = todayInBolivia()
+export function monthRangeIn(timeZone: string = DEFAULT_TIME_ZONE): { start: string; end: string } {
+  const { year, month } = todayIn(timeZone)
   return monthRangeFor(year, month)
 }
 
 // Igual que monthRangeFor, pero como instantes UTC — para filtrar columnas
 // timestamptz (domino_events.created_at), donde comparar strings de fecha no
-// sirve. Medianoche en Bolivia = 04:00 UTC (sin horario de verano).
-export function monthRangeUtcInstantFor(year: number, month: number): { startUtc: string; endUtc: string } {
+// sirve. El inicio del mes es la medianoche LOCAL de la zona (en Bolivia son
+// las 04:00 UTC; en zonas con horario de verano cambia según la fecha).
+export function monthRangeUtcInstantFor(
+  year: number,
+  month: number,
+  timeZone: string = DEFAULT_TIME_ZONE
+): { startUtc: string; endUtc: string } {
   const nextMonth = month === 12 ? 1 : month + 1
   const nextYear = month === 12 ? year + 1 : year
   return {
-    startUtc: new Date(Date.UTC(year, month - 1, 1, 4, 0, 0)).toISOString(),
-    endUtc: new Date(Date.UTC(nextYear, nextMonth - 1, 1, 4, 0, 0)).toISOString(),
+    startUtc: startOfMonthUtc(year, month, timeZone).toISOString(),
+    endUtc: startOfMonthUtc(nextYear, nextMonth, timeZone).toISOString(),
   }
 }
 
-export function monthRangeUtcInstant(): { startUtc: string; endUtc: string } {
-  const { year, month } = todayInBolivia()
-  return monthRangeUtcInstantFor(year, month)
+export function monthRangeUtcInstant(timeZone: string = DEFAULT_TIME_ZONE): { startUtc: string; endUtc: string } {
+  const { year, month } = todayIn(timeZone)
+  return monthRangeUtcInstantFor(year, month, timeZone)
 }
 
 export type PillarSummary = { id: string; pillar: PillarName; budget: number; carriedOver: number; saldo: number }
@@ -132,9 +190,12 @@ export function computeDashboard(input: {
   // mes anterior de cada pilar. 0 si no viene (o si no hay mes anterior
   // cerrado todavía). Ver lib/monthClose.ts.
   carriedOverByPillarId?: Record<string, number>
-  today?: { year: number; month: number; day: number }
+  // "Hoy" en la zona del usuario (todayIn). Obligatorio a propósito: si una
+  // llamada lo omitiera se usaría otra zona y el día/mes podría no coincidir
+  // con el del resto de la app.
+  today: { year: number; month: number; day: number }
 }): DashboardData {
-  const today = input.today ?? todayInBolivia()
+  const today = input.today
   const daysRemaining = daysInMonth(today.year, today.month) - today.day + 1
   const reservedCategoryIds = new Set(input.reservedCategoryIds ?? [])
 
