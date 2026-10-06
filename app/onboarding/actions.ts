@@ -9,8 +9,10 @@ export type PillarKey = 'ahorro' | 'gasto' | 'inversion'
 export type OnboardingInput = {
   income: number
   autoRepeat: boolean
-  pillars: { ahorro: number; gasto: number; inversion: number }
-  categories: { pillar: PillarKey; name: string }[]
+  // Migración 0030: ya no se pide un monto por pilar aparte — el monto de
+  // cada pilar sale de sumar el de sus categorías (amount ausente o 0 = sin
+  // monto fijo, queda como bolsa variable de ese pilar).
+  categories: { pillar: PillarKey; name: string; amount?: number }[]
 }
 
 export async function completeOnboarding(
@@ -20,13 +22,12 @@ export async function completeOnboarding(
   if (!(input.income > 0)) {
     return { error: 'El ingreso debe ser mayor a 0.' }
   }
-  // Migración 0020: los pilares son montos fijos, no %. Pueden sumar menos
-  // que el ingreso (el resto queda como dinero libre), pero nunca más — "no
-  // se puede fabricar plata de la nada".
-  if (input.pillars.ahorro < 0 || input.pillars.gasto < 0 || input.pillars.inversion < 0) {
-    return { error: 'Los montos de los pilares no pueden ser negativos.' }
+  if (input.categories.some((c) => c.amount !== undefined && c.amount < 0)) {
+    return { error: 'Los montos de las categorías no pueden ser negativos.' }
   }
-  const sum = input.pillars.ahorro + input.pillars.gasto + input.pillars.inversion
+  // "No se puede fabricar plata de la nada": la suma de los montos puede ser
+  // menor que el ingreso (el resto queda como dinero libre), pero nunca más.
+  const sum = input.categories.reduce((acc, c) => acc + (c.amount && c.amount > 0 ? c.amount : 0), 0)
   if (sum > input.income) {
     return { error: `Esos montos suman ${sum} Bs, más que tu ingreso de ${input.income} Bs.` }
   }
@@ -39,22 +40,22 @@ export async function completeOnboarding(
     return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' }
   }
 
-  // El nombre lo tomamos de los metadatos del usuario (guardados en el registro)
-  // y se lo pasamos a la función. Así la función NO necesita leer auth.users.
+  // El nombre y el username los tomamos de los metadatos del usuario
+  // (guardados en /registro, migración 0029) y se los pasamos a la función.
+  // Así la función NO necesita leer auth.users.
   const name =
     (user.user_metadata?.name as string | undefined)?.trim() ||
     user.email ||
     'Usuario'
+  const username = (user.user_metadata?.username as string | undefined)?.trim() || null
 
   // Llamamos a la función de Postgres que guarda todo en una transacción.
   const { error } = await supabase.rpc('complete_onboarding', {
     p_income: input.income,
     p_auto_repeat: input.autoRepeat,
     p_name: name,
-    p_ahorro_amount: input.pillars.ahorro,
-    p_gasto_amount: input.pillars.gasto,
-    p_inversion_amount: input.pillars.inversion,
     p_categories: input.categories,
+    p_username: username,
   })
 
   if (error) {

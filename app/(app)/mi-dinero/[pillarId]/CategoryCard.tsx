@@ -17,6 +17,10 @@ export type CategoryListRow = {
   name: string
   fixed_amount: number | null
   is_general: boolean
+  auto_repeat: boolean
+  fixed_start_date: string | null
+  fixed_interval_unit: import('@/lib/recurrence').RecurrenceUnit | null
+  fixed_interval_count: number | null
 }
 
 export default function CategoryCard({
@@ -24,11 +28,16 @@ export default function CategoryCard({
   pillarName,
   category,
   accumulated,
+  pendingConfirmation,
 }: {
   pillarId: string
   pillarName: PillarName
   category: CategoryListRow
   accumulated: number
+  // Gasto fijo con una cuota vencida sin confirmar (ver confirmFixedExpense,
+  // mi-dinero/actions.ts) — muestra un aviso acá para que se note sin tener
+  // que entrar a cada categoría una por una. Solo lo usa fijos/page.tsx.
+  pendingConfirmation?: boolean
 }) {
   const parts = [
     category.is_general ? 'general' : null,
@@ -43,6 +52,9 @@ export default function CategoryCard({
       <div>
         <p className="font-medium">{category.name}</p>
         {parts.length > 0 && <p className="text-sm text-zinc-500 dark:text-zinc-400">{parts.join(' · ')}</p>}
+        {pendingConfirmation && (
+          <p className="text-sm font-medium text-amber-700 dark:text-amber-400">Pendiente de confirmar</p>
+        )}
       </div>
       <div className="text-right">
         <p className={`font-semibold ${PILLAR_TEXT[pillarName]}`}>{formatBs(accumulated)} Bs</p>

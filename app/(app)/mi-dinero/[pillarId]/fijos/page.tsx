@@ -5,6 +5,8 @@
 
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { todayInBolivia } from '@/lib/dashboard'
+import { isFixedExpenseScheduled, lastFixedExpenseOccurrence } from '@/lib/fixedExpense'
 import { formatBs } from '@/lib/format'
 import Link from '../../../AppLink'
 import CategoryCard from '../CategoryCard'
@@ -42,6 +44,19 @@ export default async function GastosFijosPage({
   const gastoAmount = data.pillar?.monthly_amount ?? 0
   const remaining = Math.max(0, gastoAmount - fixedTotal)
   const percentValid = fixedTotal <= gastoAmount
+
+  // Gasto fijo con cuota vencida sin confirmar (ver confirmFixedExpense,
+  // mi-dinero/actions.ts, y el aviso del Dashboard) — mismo chequeo, para
+  // marcar acá cuál puntualmente está pendiente.
+  const today = todayInBolivia()
+  const pendingConfirmationByCategoryId: Record<string, boolean> = {}
+  for (const c of data.fixedCategories) {
+    if (!c.auto_repeat || !isFixedExpenseScheduled(c)) continue
+    const dueDate = lastFixedExpenseOccurrence(c, today)
+    if (!dueDate) continue
+    const lastTxDate = data.lastTransactionDateByCategoryId[c.id]
+    pendingConfirmationByCategoryId[c.id] = !lastTxDate || lastTxDate < dueDate
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
@@ -85,6 +100,7 @@ export default async function GastosFijosPage({
               pillarName="gasto"
               category={category}
               accumulated={data.accumulatedByCategoryId[category.id] ?? 0}
+              pendingConfirmation={pendingConfirmationByCategoryId[category.id] ?? false}
             />
           ))
         )}

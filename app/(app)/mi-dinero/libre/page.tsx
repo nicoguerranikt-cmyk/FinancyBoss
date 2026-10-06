@@ -50,6 +50,7 @@ export default async function DineroLibrePage() {
   const today = todayInBolivia()
   const daysRemaining = daysInMonth(today.year, today.month) - today.day + 1
   const weeksRemaining = Math.max(1, Math.ceil(daysRemaining / 7))
+  const biweeksRemaining = Math.max(1, Math.ceil(daysRemaining / 14))
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
@@ -68,10 +69,16 @@ export default async function DineroLibrePage() {
       <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
         <p className="text-sm text-zinc-500">Total disponible</p>
         <p className="text-2xl font-semibold tracking-tight">{formatBs(total)} Bs</p>
-        <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+        <div className="mt-3 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
           <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-900">
             <p className="text-xs text-zinc-500">Por mes</p>
             <p className="text-sm font-medium tabular-nums">{formatBs(Math.max(0, total))} Bs</p>
+          </div>
+          <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-900">
+            <p className="text-xs text-zinc-500">Por quincena</p>
+            <p className="text-sm font-medium tabular-nums">
+              {formatBs(Math.max(0, total) / biweeksRemaining)} Bs
+            </p>
           </div>
           <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-900">
             <p className="text-xs text-zinc-500">Por semana</p>
@@ -87,7 +94,7 @@ export default async function DineroLibrePage() {
           </div>
         </div>
         <p className="mt-2 text-xs text-zinc-500">
-          Tres formas de ver el mismo total: cuánto es si lo repartes en lo que queda de este mes.
+          Cuatro formas de ver el mismo total: cuánto es si lo repartes en lo que queda de este mes.
         </p>
         {currentMonthFreeMoney > 0 && (
           <p className="mt-2 text-xs text-zinc-500">

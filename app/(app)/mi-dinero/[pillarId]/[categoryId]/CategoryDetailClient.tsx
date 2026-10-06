@@ -8,6 +8,7 @@ import type { RecurrenceUnit } from '@/lib/recurrence'
 import { suggestedMonthlyContribution } from '@/lib/savingsGoal'
 import {
   bumpFixedExpenseThisMonth,
+  confirmFixedExpense,
   deleteCategory,
   registerInvestmentReturn,
   registerPastInvestment,
@@ -176,6 +177,8 @@ export default function CategoryDetailClient({
   todayIso,
   backHref,
   ahorroCategories,
+  pendingFixedConfirmation,
+  fixedBudget,
 }: {
   pillarName: PillarName
   category: CategoryRow
@@ -185,9 +188,23 @@ export default function CategoryDetailClient({
   // A dónde volver al borrar (en Gasto, la pantalla de fijos o cotidianos
   // según corresponda — ver [categoryId]/page.tsx).
   backHref: string
-  // Retorno de inversión, destino "a Ahorro" (ver [categoryId]/page.tsx) —
-  // las categorías de Ahorro del usuario. Vacío para los otros pilares.
-  ahorroCategories: { id: string; name: string }[]
+  // Retorno de inversión, destino "a Ahorro" (ver [categoryId]/page.tsx), y
+  // "Aumentar presupuesto este mes" con fuente "Ahorro" (migración 0031) —
+  // las categorías de Ahorro del usuario con su saldo. Vacío cuando no hace
+  // falta (ver needsAhorroCategories en el page.tsx).
+  ahorroCategories: { id: string; name: string; balance: number }[]
+  // true si esta categoría es un gasto fijo con una cuota ya vencida y sin
+  // confirmar todavía (ver confirmFixedExpense, mi-dinero/actions.ts).
+  pendingFixedConfirmation: boolean
+  // Asignado/usado/restante de ESTE MES, solo para gastos fijos de Gasto
+  // (null en cualquier otro caso) — ver [categoryId]/page.tsx.
+  fixedBudget: {
+    assigned: number
+    used: number
+    remaining: number
+    modality: 'pago_unico' | 'consumo_gradual'
+    status: 'pendiente' | 'pagado' | 'programado' | 'agotado' | 'disponible'
+  } | null
 }) {
   const router = useRouter()
   const [tab, setTab] = useState<'consulta' | 'configuracion'>('consulta')
@@ -211,7 +228,13 @@ export default function CategoryDetailClient({
   const [pastInvestmentError, setPastInvestmentError] = useState<string | null>(null)
   const [pastInvestmentSuccess, setPastInvestmentSuccess] = useState(false)
 
+  const [confirming, setConfirming] = useState(false)
+  const [confirmError, setConfirmError] = useState<string | null>(null)
+  const [confirmed, setConfirmed] = useState(false)
+
   const [bumpAmount, setBumpAmount] = useState('')
+  const [bumpSource, setBumpSource] = useState<'disponible' | 'ahorro'>('disponible')
+  const [bumpAhorroCategoryId, setBumpAhorroCategoryId] = useState('')
   const [bumpSaving, setBumpSaving] = useState(false)
   const [bumpError, setBumpError] = useState<string | null>(null)
   const [bumpSuccess, setBumpSuccess] = useState(false)
@@ -318,6 +341,18 @@ export default function CategoryDetailClient({
     setPastInvestmentSuccess(true)
   }
 
+  async function handleConfirmFixedExpense() {
+    setConfirmError(null)
+    setConfirming(true)
+    const res = await confirmFixedExpense({ categoryId: category.id })
+    setConfirming(false)
+    if (res.error) {
+      setConfirmError(res.error)
+      return
+    }
+    setConfirmed(true)
+  }
+
   async function handleBumpThisMonth() {
     setBumpError(null)
     setBumpSuccess(false)
@@ -326,8 +361,17 @@ export default function CategoryDetailClient({
       setBumpError('Ingresa un monto mayor a 0.')
       return
     }
+    if (bumpSource === 'ahorro' && !bumpAhorroCategoryId) {
+      setBumpError('Elige de qué ahorro sale la plata.')
+      return
+    }
     setBumpSaving(true)
-    const res = await bumpFixedExpenseThisMonth({ categoryId: category.id, amount: amountNumber })
+    const res = await bumpFixedExpenseThisMonth({
+      categoryId: category.id,
+      amount: amountNumber,
+      source: bumpSource,
+      sourceCategoryId: bumpSource === 'ahorro' ? bumpAhorroCategoryId : undefined,
+    })
     setBumpSaving(false)
     if (res.error) {
       setBumpError(res.error)
@@ -381,9 +425,80 @@ export default function CategoryDetailClient({
       {tab === 'consulta' ? (
         <div className="flex flex-col gap-4">
           <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-            <p className="text-sm text-zinc-500">Acumulado</p>
+            <p className="text-sm text-zinc-500">Acumulado histórico</p>
             <p className="text-2xl font-semibold tracking-tight">{formatBs(accumulated)} Bs</p>
           </div>
+
+          {fixedBudget && (
+            <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Este mes</p>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                    fixedBudget.status === 'agotado' || fixedBudget.status === 'pendiente'
+                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
+                      : 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400'
+                  }`}
+                >
+                  {
+                    {
+                      pendiente: 'Pendiente de confirmar',
+                      pagado: 'Pagado',
+                      programado: 'Programado',
+                      agotado: 'Presupuesto agotado',
+                      disponible: 'Disponible',
+                    }[fixedBudget.status]
+                  }
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-zinc-500">
+                {fixedBudget.modality === 'pago_unico'
+                  ? 'Pago único mensual (tiene fecha y frecuencia configuradas).'
+                  : 'Consumo gradual (lo vas registrando de a poco, sin fecha fija).'}
+              </p>
+              <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-900">
+                  <p className="text-xs text-zinc-500">Asignado</p>
+                  <p className="text-sm font-medium tabular-nums">{formatBs(fixedBudget.assigned)} Bs</p>
+                </div>
+                <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-900">
+                  <p className="text-xs text-zinc-500">Usado</p>
+                  <p className="text-sm font-medium tabular-nums">{formatBs(fixedBudget.used)} Bs</p>
+                </div>
+                <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-900">
+                  <p className="text-xs text-zinc-500">Restante</p>
+                  <p className="text-sm font-medium tabular-nums">{formatBs(Math.max(0, fixedBudget.remaining))} Bs</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {pillarName === 'gasto' && pendingFixedConfirmation && !confirmed && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/40">
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                Hoy corresponde pagar {category.name} por {formatBs(category.fixed_amount ?? 0)} Bs. ¿Ya lo pagaste?
+              </p>
+              <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                Esto solo registra el pago en el historial — esa plata ya estaba separada de tu
+                ingreso desde que configuraste el monto fijo, no se vuelve a descontar de nada.
+              </p>
+              <button
+                onClick={handleConfirmFixedExpense}
+                disabled={confirming}
+                className="mt-2 rounded-lg bg-amber-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-amber-800 disabled:opacity-50 dark:bg-amber-600 dark:hover:bg-amber-500"
+              >
+                {confirming ? 'Guardando…' : 'Ya lo pagué'}
+              </button>
+              {confirmError && (
+                <p className="mt-2 text-sm text-red-600" role="alert">
+                  {confirmError}
+                </p>
+              )}
+            </div>
+          )}
+          {confirmed && (
+            <p className="text-sm text-green-700 dark:text-green-400">Pago registrado.</p>
+          )}
 
           {pillarName === 'gasto' && category.fixed_amount !== null && (
             <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
@@ -405,10 +520,65 @@ export default function CategoryDetailClient({
                   placeholder="Monto extra (Bs)"
                   className={`${inputClass} w-32`}
                 />
-                <button onClick={handleBumpThisMonth} disabled={bumpSaving} className={secondaryButtonClass}>
-                  {bumpSaving ? 'Guardando…' : 'Aumentar'}
-                </button>
               </div>
+
+              <p className="mt-3 text-xs font-medium text-zinc-500">¿De dónde sale esa plata?</p>
+              <div className="mt-1 flex flex-col gap-1">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    checked={bumpSource === 'disponible'}
+                    onChange={() => {
+                      setBumpSource('disponible')
+                      setBumpSuccess(false)
+                    }}
+                    className="h-4 w-4"
+                  />
+                  Disponible general (Dinero libre)
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    checked={bumpSource === 'ahorro'}
+                    disabled={ahorroCategories.length === 0}
+                    onChange={() => {
+                      setBumpSource('ahorro')
+                      setBumpSuccess(false)
+                    }}
+                    className="h-4 w-4"
+                  />
+                  Un ahorro puntual
+                </label>
+              </div>
+              {bumpSource === 'ahorro' && (
+                <select
+                  value={bumpAhorroCategoryId}
+                  onChange={(e) => {
+                    setBumpAhorroCategoryId(e.target.value)
+                    setBumpSuccess(false)
+                  }}
+                  className={`${inputClass} mt-2 w-full`}
+                >
+                  <option value="">Elige de qué ahorro</option>
+                  {ahorroCategories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({formatBs(c.balance)} Bs disponibles)
+                    </option>
+                  ))}
+                </select>
+              )}
+              {ahorroCategories.length === 0 && bumpSource === 'ahorro' && (
+                <p className="mt-1 text-xs text-zinc-500">Todavía no tienes categorías de Ahorro.</p>
+              )}
+
+              <button
+                onClick={handleBumpThisMonth}
+                disabled={bumpSaving}
+                className={`${secondaryButtonClass} mt-3`}
+              >
+                {bumpSaving ? 'Guardando…' : 'Aumentar'}
+              </button>
+
               {bumpError && (
                 <p className="mt-2 text-sm text-red-600" role="alert">
                   {bumpError}

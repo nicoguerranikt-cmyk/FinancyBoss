@@ -32,7 +32,7 @@
 
 ### 1.2 Onboarding
 
-El onboarding es **obligatorio**. El usuario no puede acceder al dashboard hasta completarlo. Consta de 4 pantallas en orden fijo.
+El onboarding es **obligatorio**. El usuario no puede acceder al dashboard hasta completarlo. Consta de 6 pantallas en orden fijo. **Migración 0030:** ya no hay una pantalla de "monto total por pilar" separada de las categorías — hay una pantalla por pilar, y el monto de cada pilar sale de sumar el de sus propias categorías (no se puede saltear ningún pilar sin pasar por su pantalla).
 
 ---
 
@@ -40,8 +40,10 @@ El onboarding es **obligatorio**. El usuario no puede acceder al dashboard hasta
 
 Explica en lenguaje simple cómo funciona FinancyBoss. Máximo 3 ideas clave:
 - *"Tu plata se divide en 3 pilares: Ahorro, Gasto e Inversión."*
-- *"Vos decidís cuánta plata va a cada uno."*
-- *"Cuando te excedás en algo, te decimos exactamente qué meta estás sacrificando."*
+- *"Tú decides cuánta plata va a cada categoría dentro de cada pilar."*
+- *"Cuando te excedas en algo, te decimos exactamente qué meta estás sacrificando."*
+
+También adelanta, sin entrar en detalle, que más adelante se puede ahorrar en USD y mover el Dinero libre a cualquier categoría.
 
 Botón: **"Empecemos"** — no se puede saltar pero se puede leer rápido.
 
@@ -49,7 +51,7 @@ Botón: **"Empecemos"** — no se puede saltar pero se puede leer rápido.
 
 **Pantalla 1 — Ingreso mensual**
 
-Contexto mostrado al usuario: *"Este es el dinero con el que trabajaremos cada mes. Podés ajustarlo cuando quieras."*
+Contexto mostrado al usuario: *"Este es el dinero con el que trabajaremos cada mes. Puedes ajustarlo cuando quieras."*
 
 - Campo numérico: ingreso mensual base (mayor a $0 para continuar).
 - Toggle: *"Repetir automáticamente cada mes"* — activado por default.
@@ -57,21 +59,18 @@ Contexto mostrado al usuario: *"Este es el dinero con el que trabajaremos cada m
 
 ---
 
-**Pantalla 2 — Distribución de pilares**
+**Pantallas 2, 3 y 4 — Ahorro, Gasto e Inversión (una por pilar)**
 
-Contexto mostrado al usuario: *"Definí cuánto de tu ingreso va a cada pilar, en Bs. No hace falta usarlo todo — lo que sobre queda como dinero libre."*
+Mismo formato en los 3 pilares, en este orden fijo. Por cada pilar:
 
-- 3 campos: Ahorro / Gasto / Inversión, en Bs (no %) — migración 0020. Se sugiere un reparto inicial 20/60/20 del ingreso, editable.
-- Indicador en vivo de cuánto queda como dinero libre (ingreso − suma de los 3 montos).
-- Botón: **"Continuar"** (bloqueado solo si los 3 montos suman MÁS que el ingreso — "no se puede fabricar plata de la nada"; sumar menos es válido y normal).
+- Lista de categorías sugeridas con checkbox para activar/desactivar (tabla abajo), más un campo para agregar las propias.
+- Cada categoría activada tiene un campo de **monto opcional en Bs**: con monto, se descuenta directo del ingreso cada mes (`categories.fixed_amount`); sin monto, queda como categoría variable — ahí se va anotando lo que se gaste/ahorre sin un monto mensual fijo (mismo concepto que ya existía para "Gastos fijos" de Gasto, migración 0023 lo generalizó a los 3 pilares).
+- El monto del pilar (`pillars.monthly_amount`) **no se pide aparte**: se calcula sumando el monto de todas sus categorías.
+- Indicador en vivo: cuánto lleva ese pilar y cuánto queda libre en total (ingreso − suma de TODAS las categorías de los 3 pilares, se vayan completando o no).
+- Botón **"Continuar"** (bloqueado solo si la suma total ya supera el ingreso — "no se puede fabricar plata de la nada"; sumar menos es válido y normal).
+- Botón **"Atrás"** vuelve al pilar anterior (o a Ingreso mensual desde Ahorro) sin perder lo ya cargado.
 
----
-
-**Pantalla 3 — Subcategorías iniciales**
-
-Contexto mostrado al usuario: *"Dentro de cada pilar, podés crear categorías para organizar mejor tu dinero. Te damos algunas sugerencias para empezar."*
-
-Subcategorías sugeridas por pilar (con checkbox para activar/desactivar):
+Subcategorías sugeridas por pilar:
 
 | Ahorro | Gasto | Inversión |
 |---|---|---|
@@ -80,9 +79,15 @@ Subcategorías sugeridas por pilar (con checkbox para activar/desactivar):
 | Meta específica | Vivienda | Otro |
 | Imprevistos | Gastos diarios | |
 
-- Botón **"+ Agregar categoría"** disponible por pilar para crear las propias.
-- No es obligatorio asignar % a las subcategorías en este paso.
-- Botón: **"Ir al dashboard"** para finalizar.
+---
+
+**Pantalla 5 — Dinero libre**
+
+Después de Inversión (el último pilar), antes de terminar: explica que todo lo que no se asignó a ninguna categoría de los 3 pilares pasa directo a Dinero libre (§3.5) — plata sin destino específico, para gastar en lo que quieras.
+
+- Muestra el monto que quedó libre con lo que el usuario cargó, repartido en las mismas 4 vistas que la pantalla real (`/mi-dinero/libre`): por mes / por quincena / por semana / por día, según lo que queda del mes en curso.
+- Aclara que esto se va a ver siempre actualizado desde "Mi Dinero → Dinero libre", y que desde ahí se puede registrar un gasto, anotar un ingreso extra, o asignar parte de esa plata a una categoría más adelante (migración 0028, §3.5).
+- Botón: **"Ir al dashboard"** para finalizar — recién acá se llama a `complete_onboarding`.
 
 ---
 
@@ -221,9 +226,14 @@ movimiento.
     plata").
   - El historial se ve apilado por fecha, en rojo los gastos y en verde los
     ingresos (créditos automáticos + movimientos manuales).
-  - La pantalla muestra el total disponible repartido de 3 formas (por mes /
-    por semana / por día, según lo que queda del mes en curso) — son 3 vistas
-    del mismo total, no una configuración guardada.
+  - La pantalla muestra el total disponible repartido de 4 formas (por mes /
+    por quincena / por semana / por día, según lo que queda del mes en curso)
+    — son 4 vistas del mismo total, no una configuración guardada.
+  - **Pantalla final del onboarding**: después de configurar los 3 pilares,
+    el onboarding muestra una vista previa de este mismo reparto (mes/
+    quincena/semana/día) con lo que haya quedado libre, para que quede claro
+    desde el principio que lo no asignado a ningún pilar no se pierde — pasa
+    acá, y la app lo repite siempre actualizado en esta pantalla real.
   - El Dashboard muestra el total acumulado con un acceso directo a esta
     pantalla.
   - **Asignar a una categoría** (migración 0028): desde la propia pantalla, el
@@ -280,13 +290,25 @@ Cada subcategoría del pilar Gasto es de uno de estos dos tipos:
 
 **Reservar desde ya vs. recién cuando toca (configurable por categoría):** cada gasto fijo con descuento automático elige uno de estos dos comportamientos:
 - **Reservar desde ya:** el presupuesto diario ya descuenta este gasto (prorrateado según su frecuencia) aunque la fecha real de la cuota todavía no haya llegado — es la plata comprometida que describe la sección 4.1. Evita enterarse tarde de que esa plata ya no es disponible.
-- **Recién cuando toca:** el presupuesto diario se mantiene alto hasta el día exacto configurado, y ahí baja de golpe (la transacción se genera sola, en esa fecha).
+- **Recién cuando toca:** el presupuesto diario se mantiene alto hasta el día exacto configurado, y ahí baja (al confirmarse el pago, no antes — ver el recordatorio de abajo).
+
+**Es un recordatorio, nunca un descuento silencioso:** cuando llega la fecha de un gasto fijo con descuento automático, la app NO le mete solo la transacción — mismo criterio que el plan de pago automático de Deudas ("no asumir movimientos de plata"). El Dashboard avisa *"Tienes N gastos fijos pendientes de confirmar"* (link a Gastos fijos), la categoría se marca "Pendiente de confirmar" en la lista, y recién cuando el usuario entra y toca **"Ya lo pagué"** (`confirmFixedExpense`, `app/(app)/mi-dinero/actions.ts`) se registra el gasto de verdad, fechado en la fecha real del vencimiento. Tocar el botón dos veces, o recargar la página, no duplica el registro (mismo chequeo de idempotencia que `confirmAutoPayment` de Deudas: si ya hay una transacción en o después de esa fecha, no deja confirmar de nuevo).
 
 **Nota de diseño:** esta distinción resuelve la ambigüedad de categorías como "Comida", que puede significar el mercado mensual (fijo, monto conocido) o salir a comer (variable). Se resuelven con nombres distintos: **Mercado** (fijo) y **Comida** (variable).
 
 **Dos pantallas separadas:** dentro de Mi Dinero → Gasto, "Gastos fijos" y "Gastos variables" (nombre visible al usuario — la ruta interna sigue siendo `/cotidianos`, solo cambió el texto) tienen cada una su propio dashboard y su propio total acumulado, en vez de mezclarse en una sola lista larga. Una categoría se puede crear de dos formas: desde "Gastos variables" (nace variable, sin monto) o directo desde "Gastos fijos" con su monto puesto desde el arranque (sin tener que pasar primero por Configuración para "promoverla").
 
 **Un gasto fijo que un mes puntual sale más caro** (ej. Internet, siempre 100 Bs, este mes te llegó 150 Bs): no se toca el monto fijo (que sigue siendo 100 Bs los meses siguientes) — en la pantalla de esa categoría hay un control **"Aumentar presupuesto este mes"** (`bumpFixedExpenseThisMonth`, en `app/(app)/mi-dinero/actions.ts`) que le suma esos 50 Bs de más solo a este mes. Es la única vía para meterle más presupuesto a una categoría de Gasto — no existe una alternativa genérica de "ingreso extra a Gasto" (ver §5.4).
+
+**Migración 0031 — la plata tiene que salir de algún lado real:** esos 50 Bs de más no se fabrican solos, el usuario elige explícitamente la fuente:
+- **Disponible general (Dinero libre)**: reutiliza `allocate_free_money_to_category` (migración 0028) — ya acepta Gasto como destino.
+- **Un ahorro puntual**: el usuario elige qué categoría de Ahorro (se le muestra su saldo disponible); `fund_fixed_expense_from_savings` valida que tenga suficiente y debita esa categoría atómicamente junto con el crédito a Gasto — las dos escrituras quedan las dos o ninguna, mismo criterio que `confirm_shared_payment`/`convert_usd_savings_to_bs`.
+
+**Modalidad y estado de un gasto fijo (pantalla de la categoría, pestaña Consulta):** no es una columna nueva — se deriva de `auto_repeat` (si ya tiene fecha/frecuencia configuradas):
+- **Pago único mensual** (`auto_repeat = true`, ej. gimnasio, alquiler): estado **Programado** (todavía no llega la fecha este mes), **Pendiente de confirmar** (llegó la fecha, ver el recordatorio de arriba) o **Pagado**.
+- **Consumo gradual** (`auto_repeat = false`, ej. mercado, que se gasta de a poco en el mes): estado **Disponible** o **Presupuesto agotado** (restante de este mes en 0 o menos).
+
+En ambos casos se muestran 3 números de **este mes** (no el acumulado histórico de arriba, que es de todos los tiempos): **Asignado** (el monto fijo + lo que se haya aumentado este mes puntual), **Usado** (suma de los gastos reales registrados este mes) y **Restante** (la resta de los dos anteriores).
 
 ### 4.3 Comportamiento cuando el usuario se excede
 
@@ -307,6 +329,8 @@ Acá sí hay plata que no existía. El sistema **debe preguntar** de dónde sali
 > - De Inversión → el usuario elige cuál
 > - Alguien me lo prestó *(crea una deuda)*
 > - Ingreso extra que no registré *(pide registrarlo)*
+
+Antes de guardar la elección de Ahorro/Inversión, el servidor valida que ese pilar realmente tenga esa plata este mes (`computePillarSaldoThisMonth` en `app/(app)/actions.ts`, mismo cálculo que `computeDashboard` — no alcanza con sumar las transacciones de una categoría puntual, porque un `domino_events` anterior ya puede haber debitado el pilar entero sin dejar fila en `transactions`). Si no alcanza, se lo dice y no guarda nada — mismo criterio que el resto de los flujos de dinero de la app.
 
 El usuario elige, el sistema descuenta del origen declarado, y queda registrado en `domino_events` con el origen real.
 
@@ -341,7 +365,7 @@ Pilar Gasto del mes (+ acumulado del mes anterior)
 = Presupuesto diario disponible hoy
 ```
 
-**Importante:** solo los gastos fijos marcados "reservar desde ya" quedan afuera del cálculo diario desde el día 1 del mes (aunque su transacción real todavía no exista) — es la configuración por defecto y la recomendada, para no aparecer con más plata "disponible" de la real. Un gasto fijo marcado "recién cuando toca" sí entra al presupuesto diario como cualquier gasto, pero solo el día en que efectivamente se descuenta. Ver sección 4.2.
+**Importante:** solo los gastos fijos marcados "reservar desde ya" quedan afuera del cálculo diario desde el día 1 del mes (aunque su transacción real todavía no exista) — es la configuración por defecto y la recomendada, para no aparecer con más plata "disponible" de la real. Un gasto fijo marcado "recién cuando toca" sí entra al presupuesto diario como cualquier gasto, pero solo una vez que el usuario confirma su pago con "Ya lo pagué" (ver §4.2) — nunca antes de esa fecha, ni solo por haber llegado el día.
 
 **Ejemplo concreto:**
 - Pilar Gasto del mes: 2.000 Bs
@@ -486,7 +510,7 @@ Una deuda puede ser **local** (lo de arriba: solo existe en tu cuenta) o **vincu
 **Cómo se vincula, 3 formas (todas terminan en el mismo lugar: una fila `shared_debts` activa):**
 
 1. **Por email** (migración 0012): buscás a la otra persona por su email exacto (`find_user_by_email`) — ya sabés con quién es antes de crear la invitación.
-2. **Por nombre de usuario** (migración 0024): igual que por email, pero buscando el `@usuario` que la otra persona haya elegido en Perfil (`find_user_by_username`). El username es opcional y único por cuenta.
+2. **Por nombre de usuario** (migración 0024): igual que por email, pero buscando el `@usuario` que la otra persona haya elegido (`find_user_by_username`). El username es opcional y único por cuenta — se puede elegir en `/registro` (migración 0029, chequea disponibilidad antes de crear la cuenta vía `is_username_taken`) o después desde Perfil. Si al terminar el onboarding el elegido en el registro ya se lo llevó otra persona (carrera rarísima), el onboarding sigue sin username en vez de frenarse — se puede elegir otro después desde Perfil.
 3. **Por link** (migración 0025): para cuando no sabés el email ni el username de la otra persona (o no querés buscarlo). Armás los datos de la deuda sin elegir contraparte, generás un link (`/invitacion/[token]`) y se lo mandás por fuera de la app. Quien lo abre ve una pantalla con los datos y un botón **"Aceptar"** — recién ahí, con esa confirmación explícita, se crea la fila real. Abrir el link solo (sin apretar Aceptar) no vincula nada — mismo principio que "no asumir movimientos de plata" aplicado acá a la creación del vínculo, no a plata en sí.
 
 **Con las formas 1 y 2**, la deuda nace en estado `pending`: le queda una invitación por responder a la otra persona (Aceptar/Rechazar desde su propia lista de Deudas/Deudores) — no afecta el presupuesto de nadie hasta que la acepta.

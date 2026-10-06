@@ -31,6 +31,26 @@ export default function RegistroPage() {
           </div>
 
           <div className="flex flex-col gap-1">
+            <label htmlFor="handle" className="text-sm font-medium">
+              Nombre de usuario <span className="font-normal text-zinc-400">(opcional)</span>
+            </label>
+            <input
+              id="handle"
+              name="handle"
+              type="text"
+              autoComplete="off"
+              autoCapitalize="none"
+              placeholder="Ej. usuario_123"
+              pattern="[a-zA-Z0-9_]{3,20}"
+              className="rounded-lg border border-zinc-300 px-3 py-2 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
+            />
+            <span className="text-xs text-zinc-400">
+              3-20 caracteres: letras, números o guión bajo. Puedes dejarlo vacío y elegirlo
+              después desde Perfil.
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-1">
             <label htmlFor="email" className="text-sm font-medium">
               Email
             </label>
