@@ -45,3 +45,6 @@ next-env.d.ts
 
 # claude code local agent worktrees
 /.claude/
+
+# Documentos de prueba manual locales
+/.scratch/
