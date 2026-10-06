@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   fixedExpenseExtraThisMonth,
+  isFixedExpenseCategory,
   isFixedExpensePending,
   lastFixedExpensePaymentDate,
 } from '@/lib/fixedExpense'
@@ -38,6 +39,21 @@ describe('gasto fijo pagado o pendiente (H03)', () => {
       { amount: -500, date: '2026-10-05' },
     ]
     expect(isFixedExpensePending(dueDate, lastFixedExpensePaymentDate(tx))).toBe(false)
+  })
+})
+
+describe('categoría con monto fijo: gasto fijo o aporte mensual (H12)', () => {
+  it('en Gasto, una categoría con monto fijo es un gasto fijo (se rechaza como origen/destino)', () => {
+    expect(isFixedExpenseCategory('gasto', 500)).toBe(true)
+  })
+
+  it('en Ahorro e Inversión el monto fijo es el aporte mensual, no un gasto fijo', () => {
+    expect(isFixedExpenseCategory('ahorro', 300)).toBe(false)
+    expect(isFixedExpenseCategory('inversion', 200)).toBe(false)
+  })
+
+  it('una categoría sin monto fijo nunca es un gasto fijo', () => {
+    expect(isFixedExpenseCategory('gasto', null)).toBe(false)
   })
 })
 

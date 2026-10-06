@@ -1,4 +1,5 @@
 import type { createClient } from '@/lib/supabase/server'
+import { isFixedExpenseCategory } from '@/lib/fixedExpense'
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>
 
@@ -18,7 +19,7 @@ export async function validatePillarSource(
 ): Promise<SourceResult> {
   const { data: pillar } = await supabase
     .from('pillars')
-    .select('id')
+    .select('id, name')
     .eq('id', pillarId)
     .eq('user_id', userId)
     .maybeSingle()
@@ -35,7 +36,7 @@ export async function validatePillarSource(
     .is('deleted_at', null)
     .maybeSingle()
   if (!category) return { pillarId: pillar.id, categoryId: null, error: 'Categoría inválida.' }
-  if (category.fixed_amount !== null) {
+  if (isFixedExpenseCategory(pillar.name, category.fixed_amount)) {
     return {
       pillarId: pillar.id,
       categoryId: null,

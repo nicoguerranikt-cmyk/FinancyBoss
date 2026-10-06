@@ -27,6 +27,15 @@ function toRecurrenceConfig(c: FixedExpenseConfig) {
   }
 }
 
+// ¿Esta categoría es un gasto fijo? Solo en Gasto: desde la migración 0023
+// toda categoría puede tener fixed_amount, pero en Ahorro/Inversión es el
+// aporte mensual y no un gasto programado. Una categoría de Gasto con monto
+// fijo no puede ser origen/destino de un pago de deuda o cobro (su plata
+// queda comprometida). Misma regla que confirm_shared_payment (migración 0033).
+export function isFixedExpenseCategory(pillarName: string, fixedAmount: number | null): boolean {
+  return pillarName === 'gasto' && fixedAmount !== null
+}
+
 export function isFixedExpenseScheduled(c: FixedExpenseConfig): boolean {
   return c.fixed_amount !== null && isRecurrenceConfigured(toRecurrenceConfig(c))
 }
