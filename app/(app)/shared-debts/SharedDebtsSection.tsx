@@ -65,18 +65,54 @@ export default function SharedDebtsSection({
   const pendingAutoPaySet = new Set(pendingAutoPayIds)
   const gastoPillarId = pillars.find((p) => p.name === 'gasto')?.id ?? ''
 
+  // Error de la última acción que no tiene su propio formulario (aceptar,
+  // rechazar, archivar, ver comprobante). Antes se descartaba el {error} que
+  // devolvía el servidor y el usuario no se enteraba de que no pasó nada.
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  // Corre una acción mostrando su error, y SIEMPRE sale del estado "guardando"
+  // (finally) aunque la llamada lance una excepción (corte de red).
+  async function runAction(
+    setSaving: (saving: boolean) => void,
+    action: () => Promise<{ error?: string }>,
+    fallbackError: string
+  ): Promise<boolean> {
+    setActionError(null)
+    setSaving(true)
+    try {
+      const res = await action()
+      if (res.error) {
+        setActionError(res.error)
+        return false
+      }
+      return true
+    } catch {
+      setActionError(fallbackError)
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }
+
   // ---------- Aceptar / rechazar invitación ----------
   const [respondSaving, setRespondSaving] = useState<Record<string, boolean>>({})
 
+  function setRespondSavingFor(id: string) {
+    return (saving: boolean) => setRespondSaving((prev) => ({ ...prev, [id]: saving }))
+  }
   async function handleAccept(id: string) {
-    setRespondSaving((prev) => ({ ...prev, [id]: true }))
-    await acceptSharedDebtInvite({ sharedDebtId: id })
-    setRespondSaving((prev) => ({ ...prev, [id]: false }))
+    await runAction(
+      setRespondSavingFor(id),
+      () => acceptSharedDebtInvite({ sharedDebtId: id }),
+      'No pudimos aceptar la invitación. Prueba de nuevo.'
+    )
   }
   async function handleReject(id: string) {
-    setRespondSaving((prev) => ({ ...prev, [id]: true }))
-    await rejectSharedDebtInvite({ sharedDebtId: id })
-    setRespondSaving((prev) => ({ ...prev, [id]: false }))
+    await runAction(
+      setRespondSavingFor(id),
+      () => rejectSharedDebtInvite({ sharedDebtId: id }),
+      'No pudimos rechazar la invitación. Prueba de nuevo.'
+    )
   }
 
   // ---------- Proponer pago (rol deudor) ----------
@@ -91,7 +127,12 @@ export default function SharedDebtsSection({
   // QR del acreedor: se pide bajo demanda (no en cada carga de la lista) —
   // solo cuando el deudor abre "Proponer pago" para esa deuda puntual.
   const [qrByDebtId, setQrByDebtId] = useState<Record<string, string | null>>({})
+  const [qrErrorIds, setQrErrorIds] = useState<Record<string, boolean>>({})
   const [qrLoadingId, setQrLoadingId] = useState<string | null>(null)
+  // Si el pago ya se propuso pero el comprobante no se pudo subir, se guarda
+  // acá su id: reintentar vuelve a subir el comprobante de ESE pago en vez de
+  // crear otra propuesta (antes, repetir el formulario duplicaba el pago).
+  const [proposedPaymentId, setProposedPaymentId] = useState<string | null>(null)
 
   function openPropose(id: string) {
     setProposeOpenId(id)
@@ -100,49 +141,76 @@ export default function SharedDebtsSection({
     setProposeCategoryId('')
     setProposeReceiptFile(null)
     setProposeError(null)
+    setProposedPaymentId(null)
     if (qrByDebtId[id] === undefined) {
       setQrLoadingId(id)
-      getCreditorPaymentQrUrl({ sharedDebtId: id }).then((res) => {
-        setQrLoadingId(null)
-        setQrByDebtId((prev) => ({ ...prev, [id]: 'error' in res ? null : res.qrUrl }))
-      })
+      getCreditorPaymentQrUrl({ sharedDebtId: id })
+        .then((res) => {
+          const failed = 'error' in res
+          setQrErrorIds((prev) => ({ ...prev, [id]: failed }))
+          setQrByDebtId((prev) => ({ ...prev, [id]: failed ? null : res.qrUrl }))
+        })
+        .catch(() => {
+          setQrErrorIds((prev) => ({ ...prev, [id]: true }))
+          setQrByDebtId((prev) => ({ ...prev, [id]: null }))
+        })
+        .finally(() => setQrLoadingId(null))
     }
   }
 
   async function handlePropose(sharedDebtId: string) {
     const amount = Number(proposeAmount)
-    if (!(amount > 0)) return setProposeError('Ingresa un monto mayor a 0.')
-    if (!proposePillarId) return setProposeError('Elige un pilar.')
+    if (!proposedPaymentId) {
+      if (!(amount > 0)) return setProposeError('Ingresa un monto mayor a 0.')
+      if (!proposePillarId) return setProposeError('Elige un pilar.')
+    }
 
     setProposeSaving(true)
     setProposeError(null)
-    const res = await proposeSharedPayment({
-      sharedDebtId,
-      amount,
-      pillarId: proposePillarId,
-      categoryId: proposeCategoryId || null,
-    })
-    if (res.error) {
-      setProposeSaving(false)
-      setProposeError(res.error)
-      return
-    }
-    // El comprobante es opcional: si el pago se propuso bien pero subir la
-    // imagen falla, no queremos que parezca que todo falló — el pago ya
-    // está propuesto, solo avisamos que la imagen no se pudo adjuntar.
-    if (proposeReceiptFile && res.paymentId) {
-      const formData = new FormData()
-      formData.append('paymentId', res.paymentId)
-      formData.append('file', proposeReceiptFile)
-      const receiptRes = await uploadPaymentReceipt(formData)
-      if (receiptRes.error) {
-        setProposeSaving(false)
-        setProposeError(`Pago propuesto, pero no pudimos subir el comprobante: ${receiptRes.error}`)
-        return
+    // Fuera del try para que el catch sepa si el pago ya llegó a crearse.
+    let paymentId = proposedPaymentId
+    try {
+      if (!paymentId) {
+        const res = await proposeSharedPayment({
+          sharedDebtId,
+          amount,
+          pillarId: proposePillarId,
+          categoryId: proposeCategoryId || null,
+        })
+        if (res.error) {
+          setProposeError(res.error)
+          return
+        }
+        paymentId = res.paymentId ?? null
+        setProposedPaymentId(paymentId)
       }
+
+      // El comprobante es opcional: si el pago se propuso bien pero subir la
+      // imagen falla, no parece que todo falló — el pago ya está propuesto y
+      // se puede reintentar solo el comprobante, sin proponer otro pago.
+      if (proposeReceiptFile && paymentId) {
+        const formData = new FormData()
+        formData.append('paymentId', paymentId)
+        formData.append('file', proposeReceiptFile)
+        const receiptRes = await uploadPaymentReceipt(formData)
+        if (receiptRes.error) {
+          setProposeError(
+            `Tu pago ya fue propuesto, pero no pudimos subir el comprobante: ${receiptRes.error} Puedes reintentar la subida o cerrar sin comprobante.`
+          )
+          return
+        }
+      }
+      setProposeOpenId(null)
+      setProposedPaymentId(null)
+    } catch {
+      setProposeError(
+        paymentId
+          ? 'No pudimos subir el comprobante. Tu pago ya fue propuesto: reintenta la subida o cierra sin comprobante.'
+          : 'No pudimos completar la propuesta. Revisa tu conexión y prueba de nuevo.'
+      )
+    } finally {
+      setProposeSaving(false)
     }
-    setProposeSaving(false)
-    setProposeOpenId(null)
   }
 
   // ---------- Confirmar / rechazar pago (rol acreedor) ----------
@@ -163,14 +231,19 @@ export default function SharedDebtsSection({
     if (!confirmPillarId) return setConfirmError('Elige a qué pilar entra esa plata.')
     setConfirmSaving((prev) => ({ ...prev, [paymentId]: true }))
     setConfirmError(null)
-    const res = await confirmSharedPayment({
-      paymentId,
-      pillarId: confirmPillarId,
-      categoryId: confirmCategoryId || null,
-    })
-    setConfirmSaving((prev) => ({ ...prev, [paymentId]: false }))
-    if (res.error) setConfirmError(res.error)
-    else setConfirmOpenId(null)
+    try {
+      const res = await confirmSharedPayment({
+        paymentId,
+        pillarId: confirmPillarId,
+        categoryId: confirmCategoryId || null,
+      })
+      if (res.error) setConfirmError(res.error)
+      else setConfirmOpenId(null)
+    } catch {
+      setConfirmError('No pudimos confirmar el pago. Revisa tu conexión y prueba de nuevo.')
+    } finally {
+      setConfirmSaving((prev) => ({ ...prev, [paymentId]: false }))
+    }
   }
 
   // ---------- Rechazar pago, con nota opcional ----------
@@ -183,10 +256,14 @@ export default function SharedDebtsSection({
   }
 
   async function handleRejectPayment(paymentId: string) {
-    setConfirmSaving((prev) => ({ ...prev, [paymentId]: true }))
-    await rejectSharedPayment({ paymentId, note: rejectNote })
-    setConfirmSaving((prev) => ({ ...prev, [paymentId]: false }))
-    setRejectOpenId(null)
+    // El formulario se cierra solo si el rechazo salió bien; si falla, queda
+    // abierto con la nota escrita y el error a la vista.
+    const ok = await runAction(
+      (saving) => setConfirmSaving((prev) => ({ ...prev, [paymentId]: saving })),
+      () => rejectSharedPayment({ paymentId, note: rejectNote }),
+      'No pudimos rechazar el pago. Prueba de nuevo.'
+    )
+    if (ok) setRejectOpenId(null)
   }
 
   // ---------- Ver comprobante (rol acreedor) — bajo demanda ----------
@@ -194,18 +271,30 @@ export default function SharedDebtsSection({
   const [receiptLoadingId, setReceiptLoadingId] = useState<string | null>(null)
 
   async function handleViewReceipt(paymentId: string) {
+    setActionError(null)
     setReceiptLoadingId(paymentId)
-    const res = await getPaymentReceiptUrl({ paymentId })
-    setReceiptLoadingId(null)
-    setReceiptByPaymentId((prev) => ({ ...prev, [paymentId]: 'error' in res ? null : res.receiptUrl }))
+    try {
+      const res = await getPaymentReceiptUrl({ paymentId })
+      if ('error' in res) {
+        setActionError(res.error)
+      } else {
+        setReceiptByPaymentId((prev) => ({ ...prev, [paymentId]: res.receiptUrl }))
+      }
+    } catch {
+      setActionError('No pudimos cargar el comprobante. Prueba de nuevo.')
+    } finally {
+      setReceiptLoadingId(null)
+    }
   }
 
   // ---------- Archivar ----------
   const [archiveSaving, setArchiveSaving] = useState<Record<string, boolean>>({})
   async function handleArchive(id: string) {
-    setArchiveSaving((prev) => ({ ...prev, [id]: true }))
-    await archiveSharedDebt({ sharedDebtId: id })
-    setArchiveSaving((prev) => ({ ...prev, [id]: false }))
+    await runAction(
+      (saving) => setArchiveSaving((prev) => ({ ...prev, [id]: saving })),
+      () => archiveSharedDebt({ sharedDebtId: id }),
+      'No pudimos archivar la deuda. Prueba de nuevo.'
+    )
   }
 
   const visible = debts.filter((d) => d.status !== 'rejected' && d.status !== 'archived')
@@ -218,6 +307,11 @@ export default function SharedDebtsSection({
       </p>
 
       <div className="mt-3 flex flex-col gap-3">
+        {actionError && (
+          <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-400" role="alert">
+            {actionError}
+          </p>
+        )}
         {visible.length === 0 && (
           <p className="text-sm text-zinc-500">Todavía no tienes deudas vinculadas.</p>
         )}
@@ -415,6 +509,10 @@ export default function SharedDebtsSection({
                                 className="h-40 w-40 rounded-lg border border-zinc-200 object-contain dark:border-zinc-800"
                               />
                             </div>
+                          ) : qrErrorIds[debt.id] ? (
+                            <p className="text-xs text-red-600">
+                              No pudimos cargar el QR de {debt.counterpartName}. Cierra y vuelve a abrir para reintentar.
+                            </p>
                           ) : (
                             <p className="text-xs text-zinc-500">
                               {debt.counterpartName} todavía no subió un QR de cobro.
@@ -472,10 +570,20 @@ export default function SharedDebtsSection({
                               disabled={proposeSaving}
                               className={primaryButtonClass}
                             >
-                              {proposeSaving ? 'Guardando…' : 'Proponer pago'}
+                              {proposeSaving
+                                ? 'Guardando…'
+                                : proposedPaymentId
+                                  ? 'Reintentar comprobante'
+                                  : 'Proponer pago'}
                             </button>
-                            <button onClick={() => setProposeOpenId(null)} className={secondaryButtonClass}>
-                              Cancelar
+                            <button
+                              onClick={() => {
+                                setProposeOpenId(null)
+                                setProposedPaymentId(null)
+                              }}
+                              className={secondaryButtonClass}
+                            >
+                              {proposedPaymentId ? 'Cerrar sin comprobante' : 'Cancelar'}
                             </button>
                           </div>
                         </div>

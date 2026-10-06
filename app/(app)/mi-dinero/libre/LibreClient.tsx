@@ -69,34 +69,41 @@ export default function LibreClient({
     }
 
     setSubmitting(true)
-    const res =
-      mode === 'asignar'
-        ? await (async () => {
-            if (!categoryId) {
-              return { error: 'Elige a qué categoría va.' }
-            }
-            return allocateFreeMoneyToCategory({
+    try {
+      const res =
+        mode === 'asignar'
+          ? await (async () => {
+              if (!categoryId) {
+                return { error: 'Elige a qué categoría va.' }
+              }
+              return allocateFreeMoneyToCategory({
+                amount: amountNumber,
+                categoryId,
+                description: description.trim() || undefined,
+                date,
+              })
+            })()
+          : await registerFreeMoneyMovement({
+              type: mode,
               amount: amountNumber,
-              categoryId,
               description: description.trim() || undefined,
               date,
             })
-          })()
-        : await registerFreeMoneyMovement({
-            type: mode,
-            amount: amountNumber,
-            description: description.trim() || undefined,
-            date,
-          })
-    setSubmitting(false)
-    if (res.error) {
-      setError(res.error)
-      return
+      if (res.error) {
+        setError(res.error)
+        return
+      }
+      setAmount('')
+      setDescription('')
+      setDate(todayIso)
+      setSuccess(true)
+    } catch {
+      // Los datos escritos se conservan: el usuario puede reintentar sin
+      // volver a cargarlos.
+      setError('No pudimos registrar el movimiento. Revisa tu conexión y prueba de nuevo.')
+    } finally {
+      setSubmitting(false)
     }
-    setAmount('')
-    setDescription('')
-    setDate(todayIso)
-    setSuccess(true)
   }
 
   return (

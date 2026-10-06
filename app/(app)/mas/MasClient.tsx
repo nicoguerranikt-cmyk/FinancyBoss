@@ -49,37 +49,52 @@ export default function MasClient({
     if (!file) return
     setQrSaving(true)
     setQrError(null)
-    const formData = new FormData()
-    formData.append('file', file)
-    const res = await uploadPaymentQr(formData)
-    setQrSaving(false)
-    if (res.error) setQrError(res.error)
-    if (qrFileInputRef.current) qrFileInputRef.current.value = ''
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await uploadPaymentQr(formData)
+      if (res.error) setQrError(res.error)
+    } catch {
+      setQrError('No pudimos subir el QR. Revisa tu conexión y prueba de nuevo.')
+    } finally {
+      setQrSaving(false)
+      if (qrFileInputRef.current) qrFileInputRef.current.value = ''
+    }
   }
 
   async function handleRemoveQr() {
     setQrSaving(true)
     setQrError(null)
-    const res = await removePaymentQr()
-    setQrSaving(false)
-    if (res.error) setQrError(res.error)
+    try {
+      const res = await removePaymentQr()
+      if (res.error) setQrError(res.error)
+    } catch {
+      setQrError('No pudimos quitar el QR. Revisa tu conexión y prueba de nuevo.')
+    } finally {
+      setQrSaving(false)
+    }
   }
 
   async function handleSave() {
     setSaving(true)
     setError(null)
     setSaved(false)
-    const res = await updateProfile({
-      name,
-      baseIncome: Number(baseIncome),
-      autoRepeatIncome,
-      username,
-    })
-    setSaving(false)
-    if (res.error) {
-      setError(res.error)
-    } else {
-      setSaved(true)
+    try {
+      const res = await updateProfile({
+        name,
+        baseIncome: Number(baseIncome),
+        autoRepeatIncome,
+        username,
+      })
+      if (res.error) {
+        setError(res.error)
+      } else {
+        setSaved(true)
+      }
+    } catch {
+      setError('No pudimos guardar los cambios. Revisa tu conexión y prueba de nuevo.')
+    } finally {
+      setSaving(false)
     }
   }
 
