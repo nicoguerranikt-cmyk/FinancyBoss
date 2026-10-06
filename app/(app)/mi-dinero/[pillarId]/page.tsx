@@ -134,6 +134,15 @@ export default async function PillarCategoriesPage({
               <p className="font-semibold text-zinc-500">{formatBs(data.sinCategoria)} Bs</p>
             </div>
           )}
+          {data.categoriasEliminadas !== 0 && (
+            <div className="flex items-center justify-between rounded-xl border border-dashed border-zinc-300 p-4 dark:border-zinc-700">
+              <div>
+                <p className="font-medium text-zinc-500">Categorías eliminadas</p>
+                <p className="text-sm text-zinc-500">su plata sigue en este pilar</p>
+              </div>
+              <p className="font-semibold text-zinc-500">{formatBs(data.categoriasEliminadas)} Bs</p>
+            </div>
+          )}
           <AddCategoryForm pillarId={pillarId} withFixedAmount />
         </div>
       )}

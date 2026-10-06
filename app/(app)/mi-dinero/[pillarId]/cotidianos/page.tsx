@@ -52,7 +52,7 @@ export default async function GastosCotidianosPage({
       </div>
 
       <div className="flex flex-col gap-2">
-        {data.everydayCategories.length === 0 && data.sinCategoria === 0 && (
+        {data.everydayCategories.length === 0 && data.sinCategoria === 0 && data.categoriasEliminadas === 0 && (
           <p className="text-sm text-zinc-500">Todavía no tienes categorías variables.</p>
         )}
         {data.everydayCategories.map((category) => (
@@ -71,6 +71,15 @@ export default async function GastosCotidianosPage({
               <p className="text-sm text-zinc-500">movimientos directos al pilar</p>
             </div>
             <p className="font-semibold text-zinc-500">{formatBs(data.sinCategoria)} Bs</p>
+          </div>
+        )}
+        {data.categoriasEliminadas !== 0 && (
+          <div className="flex items-center justify-between rounded-xl border border-dashed border-zinc-300 p-4 dark:border-zinc-700">
+            <div>
+              <p className="font-medium text-zinc-500">Categorías eliminadas</p>
+              <p className="text-sm text-zinc-500">su plata sigue en este pilar</p>
+            </div>
+            <p className="font-semibold text-zinc-500">{formatBs(data.categoriasEliminadas)} Bs</p>
           </div>
         )}
       </div>

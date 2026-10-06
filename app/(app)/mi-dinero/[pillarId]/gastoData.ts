@@ -6,6 +6,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import type { PillarName } from '@/lib/dashboard'
+import { summarizePillarMovements } from '@/lib/pillarTotals'
 import type { CategoryListRow } from './CategoryCard'
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>
@@ -39,22 +40,19 @@ export async function loadGastoPillarData(supabase: SupabaseClient, userId: stri
     })
   }
 
-  const accumulatedByCategoryId: Record<string, number> = {}
   // Última fecha con transacción por categoría — usado en fijos/page.tsx
   // para saber si un gasto fijo con cuota vencida ya se confirmó este mes
   // (mismo chequeo que hace confirmFixedExpense en mi-dinero/actions.ts).
   const lastTransactionDateByCategoryId: Record<string, string> = {}
-  let sinCategoria = 0
   for (const t of transactions ?? []) {
-    if (t.category_id) {
-      accumulatedByCategoryId[t.category_id] = (accumulatedByCategoryId[t.category_id] ?? 0) + t.amount
-      // Solo los gastos (amount < 0) cuentan como pago: un reparto o un
-      // ingreso extra no confirman una cuota (ver lastFixedExpensePaymentDate).
-      if (t.amount < 0 && (!lastTransactionDateByCategoryId[t.category_id] || t.date > lastTransactionDateByCategoryId[t.category_id])) {
-        lastTransactionDateByCategoryId[t.category_id] = t.date
-      }
-    } else {
-      sinCategoria += t.amount
+    // Solo los gastos (amount < 0) cuentan como pago: un reparto o un
+    // ingreso extra no confirman una cuota (ver lastFixedExpensePaymentDate).
+    if (
+      t.category_id &&
+      t.amount < 0 &&
+      (!lastTransactionDateByCategoryId[t.category_id] || t.date > lastTransactionDateByCategoryId[t.category_id])
+    ) {
+      lastTransactionDateByCategoryId[t.category_id] = t.date
     }
   }
 
@@ -63,10 +61,21 @@ export async function loadGastoPillarData(supabase: SupabaseClient, userId: stri
   const fixedCategories = allCategories.filter((c) => c.fixed_amount !== null)
   const everydayCategories = allCategories.filter((c) => c.fixed_amount === null)
 
+  // Una categoría eliminada (borrado suave) conserva sus movimientos: su plata
+  // sigue en el pilar, así que cuenta en el total (ver lib/pillarTotals.ts).
+  const {
+    byCategoryId: accumulatedByCategoryId,
+    sinCategoria,
+    categoriasEliminadas,
+    total: totalAcumulado,
+  } = summarizePillarMovements(transactions ?? [], new Set(allCategories.map((c) => c.id)))
+
   const sum = (rows: CategoryListRow[]) => rows.reduce((s, c) => s + (accumulatedByCategoryId[c.id] ?? 0), 0)
   const fixedAccumulated = sum(fixedCategories)
-  const everydayAccumulated = sum(everydayCategories) + sinCategoria
-  const totalAcumulado = fixedAccumulated + everydayAccumulated
+  // Lo que no está en una categoría activa (movimientos directos al pilar y
+  // categorías eliminadas) se junta con los variables, así los dos grupos de
+  // Gasto siempre suman el total de arriba.
+  const everydayAccumulated = sum(everydayCategories) + sinCategoria + categoriasEliminadas
 
   return {
     pillar,
@@ -76,6 +85,7 @@ export async function loadGastoPillarData(supabase: SupabaseClient, userId: stri
     accumulatedByCategoryId,
     lastTransactionDateByCategoryId,
     sinCategoria,
+    categoriasEliminadas,
     fixedAccumulated,
     everydayAccumulated,
     totalAcumulado,

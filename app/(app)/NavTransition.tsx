@@ -36,6 +36,10 @@ type Phase = 'hidden' | 'enter' | 'hold' | 'exit'
 const ENTER_MS = 500
 const EXIT_MS = 500
 const MIN_HOLD_MS = 1400 // un guiño completo (coin-wink dura 1.4s)
+// Salida de emergencia: si la pantalla nueva nunca avisa que está lista (la
+// navegación se canceló, falló o la red es muy lenta), la moneda sale igual
+// después de este tiempo en vez de quedarse tapando la app para siempre.
+const MAX_HOLD_MS = 8000
 
 const NavTransitionContext = createContext<{
   beginNavigation: () => void
@@ -65,6 +69,8 @@ export default function NavTransitionProvider({ children }: { children: React.Re
   // unos segundos hasta que la navegación real terminaba y recién ahí
   // cambiaba, sin nada tapando ese salto.
   const beginNavigation = useCallback(() => {
+    // Si el sistema pide menos movimiento, no hay animación: se navega directo.
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
     readyRef.current = false
     setPhase('enter')
   }, [])
@@ -87,7 +93,7 @@ export default function NavTransitionProvider({ children }: { children: React.Re
     const holdStartedAt = Date.now()
     const interval = setInterval(() => {
       const elapsed = Date.now() - holdStartedAt
-      if (elapsed >= MIN_HOLD_MS && readyRef.current) {
+      if ((elapsed >= MIN_HOLD_MS && readyRef.current) || elapsed >= MAX_HOLD_MS) {
         setPhase('exit')
       }
     }, 100)
