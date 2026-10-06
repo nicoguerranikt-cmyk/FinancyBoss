@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { computeDashboard, daysInMonth, monthRangeInBolivia, monthRangeUtcInstant, todayInBolivia } from '@/lib/dashboard'
 import { EPSILON, buildCaso1Message, computeDominoPillarAdjustments } from '@/lib/domino'
 import { isFixedExpenseScheduled, monthlyReserveAmount } from '@/lib/fixedExpense'
+import { formatBs } from '@/lib/format'
 import { getCarriedOverByPillarId } from '@/lib/monthClose'
 import { ensureMonthlyAllocation } from '@/lib/monthlyAllocation.server'
 
@@ -325,6 +326,23 @@ async function computePillarSaldoThisMonth(
   return dashboard.pillars.find((p) => p.id === pillarId)?.saldo ?? 0
 }
 
+// Un exceso se resuelve UNA sola vez: si ya hay un domino_events para ese
+// movimiento, repetir la cobertura (doble clic, otra pestaña) descontaría
+// dos veces la misma plata del pilar. Devuelve true si ya estaba resuelto.
+async function isTransactionAlreadyCovered(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  transactionId: string
+): Promise<boolean> {
+  const { data } = await supabase
+    .from('domino_events')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('transaction_id', transactionId)
+    .limit(1)
+  return !!data && data.length > 0
+}
+
 // "Reajustar automáticamente" del aviso de ingreso insuficiente (manual
 // §2.1): el usuario pide, con un botón, que el reparto de este mes se genere
 // con los pilares reducidos proporcionalmente al ingreso confirmado. Solo
@@ -374,6 +392,26 @@ export async function coverWithAhorro(input: {
     .maybeSingle()
   if (!tx) {
     return { error: 'Movimiento inválido.' }
+  }
+
+  if (await isTransactionAlreadyCovered(supabase, user.id, input.transactionId)) {
+    return { error: 'Este exceso ya fue cubierto.' }
+  }
+
+  // Mismo principio que resolveDeficit: no se puede cubrir con Ahorro plata
+  // que Ahorro no tiene ("no se puede fabricar plata de la nada").
+  const { data: ahorroPillar } = await supabase
+    .from('pillars')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('name', 'ahorro')
+    .maybeSingle()
+  if (!ahorroPillar) {
+    return { error: 'No encontramos tu pilar de Ahorro.' }
+  }
+  const ahorroSaldo = await computePillarSaldoThisMonth(supabase, user.id, ahorroPillar.id)
+  if (ahorroSaldo < input.amount - EPSILON) {
+    return { error: `Ahorro solo tiene ${formatBs(Math.max(0, ahorroSaldo))} Bs disponibles este mes.` }
   }
 
   const { error } = await supabase.from('domino_events').insert({
@@ -439,6 +477,10 @@ export async function resolveDeficit(input: ResolveDeficitInput): Promise<{ erro
     return {}
   }
 
+  if (await isTransactionAlreadyCovered(supabase, user.id, input.transactionId)) {
+    return { error: 'Este exceso ya fue resuelto.' }
+  }
+
   if (input.choice === 'ahorro' || input.choice === 'inversion') {
     if (!input.categoryId) {
       return { error: 'Elige una subcategoría.' }
@@ -474,7 +516,7 @@ export async function resolveDeficit(input: ResolveDeficitInput): Promise<{ erro
     const pillarSaldo = await computePillarSaldoThisMonth(supabase, user.id, pillar.id)
     if (pillarSaldo < input.amount - EPSILON) {
       return {
-        error: `${input.choice === 'ahorro' ? 'Ahorro' : 'Inversión'} solo tiene ${Math.max(0, pillarSaldo).toFixed(2)} Bs disponibles este mes.`,
+        error: `${input.choice === 'ahorro' ? 'Ahorro' : 'Inversión'} solo tiene ${formatBs(Math.max(0, pillarSaldo))} Bs disponibles este mes.`,
       }
     }
 
