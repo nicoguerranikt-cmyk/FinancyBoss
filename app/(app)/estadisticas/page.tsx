@@ -21,7 +21,13 @@ import {
 import { computeDominoPillarAdjustments } from '@/lib/domino'
 import { isFixedExpenseScheduled, monthlyReserveAmount } from '@/lib/fixedExpense'
 import { closeElapsedMonths, getCarriedOverByPillarId } from '@/lib/monthClose'
-import { categoryBudgetsForMonth, incomeForMonth } from '@/lib/statsHistory'
+import {
+  categoryBudgetsForMonth,
+  externalExtraIncome,
+  externalFreeMoneyIncome,
+  incomeForMonth,
+  isInternalMovement,
+} from '@/lib/statsHistory'
 import EstadisticasView, {
   type CategoryStat,
   type DebtStat,
@@ -93,6 +99,8 @@ export default async function EstadisticasPage({
     { data: debts },
     { data: debtors },
     { data: budgetHistory },
+    { data: freeMoneyRows },
+    { data: sharedDebts },
   ] = await Promise.all([
     supabase.from('pillars').select('id, name, monthly_amount').eq('user_id', userId),
     supabase
@@ -103,7 +111,7 @@ export default async function EstadisticasPage({
       .eq('user_id', userId),
     supabase
       .from('transactions')
-      .select('pillar_id, category_id, amount, type, debt_id, debtor_id, is_allocation')
+      .select('pillar_id, category_id, amount, type, debt_id, debtor_id, shared_debt_id, is_allocation, kind')
       .eq('user_id', userId)
       .gte('date', start)
       .lte('date', end),
@@ -120,6 +128,20 @@ export default async function EstadisticasPage({
       .select('pillar_id, year, month, budgeted_amount, carried_over, spent_amount, income_amount')
       .eq('user_id', userId)
       .is('category_id', null),
+    // Ingresos que entran directo a Dinero libre en este mes (no están en
+    // transactions): cuentan en "Ingreso total".
+    supabase
+      .from('free_money_transactions')
+      .select('amount, kind, credit_month')
+      .eq('user_id', userId)
+      .gte('date', start)
+      .lte('date', end),
+    // Deudas vinculadas (las dos partes): sus pagos sí están en transactions
+    // (shared_debt_id) pero no en las tablas de deudas/deudores locales.
+    supabase
+      .from('shared_debts')
+      .select('id, name, remaining_amount, status, debtor_user_id, creditor_user_id')
+      .or(`debtor_user_id.eq.${userId},creditor_user_id.eq.${userId}`),
   ])
 
   const typedPillars: PillarRow[] = pillars ?? []
@@ -205,12 +227,11 @@ export default async function EstadisticasPage({
   })
 
   // ---------- Ingreso total del mes ----------
-  // is_allocation se excluye: es el reparto del propio baseIncome en
-  // categorías (ver migración 0015), no ingreso nuevo — si no, se contaría
-  // dos veces.
-  const extraIncome = allTx
-    .filter((t) => t.type === 'extra_income' && !t.is_allocation)
-    .reduce((sum, t) => sum + t.amount, 0)
+  // Solo ingreso REAL: no cuentan el reparto del propio ingreso (is_allocation,
+  // migración 0015) ni los traslados entre cuentas propias y saldos iniciales
+  // (kind, migración 0037) — mover plata propia no es ingreso nuevo. Se suma
+  // también lo que entró directo a Dinero libre (lib/statsHistory.ts).
+  const extraIncome = externalExtraIncome(allTx) + externalFreeMoneyIncome(freeMoneyRows ?? [])
   // Un mes cerrado usa el ingreso con el que se cerró, no el sueldo de hoy
   // (ver lib/statsHistory.ts).
   const storedIncome = (budgetHistory ?? []).find((r) => r.year === year && r.month === month)?.income_amount
@@ -219,7 +240,9 @@ export default async function EstadisticasPage({
   // ---------- Por subcategoría ----------
   const spentByCategory = new Map<string, number>()
   for (const t of allTx) {
-    if (t.type !== 'expense' || !t.category_id) continue
+    // El lado de Ahorro de un traslado (ej. aumentar un gasto fijo desde
+    // Ahorro) está guardado como gasto pero no es un gasto real.
+    if (t.type !== 'expense' || !t.category_id || isInternalMovement(t)) continue
     spentByCategory.set(t.category_id, (spentByCategory.get(t.category_id) ?? 0) + -t.amount)
   }
   // Presupuesto de cada categoría EN ESE MES: lo que se le repartió, no su
@@ -240,7 +263,7 @@ export default async function EstadisticasPage({
 
   // ---------- Dona: proporción de gasto por categoría (dentro de Gasto) ----------
   const gastoExpenseTotal = allTx
-    .filter((t) => t.type === 'expense' && t.pillar_id === gastoPillarId)
+    .filter((t) => t.type === 'expense' && t.pillar_id === gastoPillarId && !isInternalMovement(t))
     .reduce((sum, t) => sum + -t.amount, 0)
   const gastoCategorySpent = [...spentByCategory.entries()]
     .filter(([categoryId]) => categoryById[categoryId]?.pillar_id === gastoPillarId)
@@ -276,20 +299,43 @@ export default async function EstadisticasPage({
   // ---------- Deudas / deudores ----------
   const paidByDebtId = new Map<string, number>()
   const collectedByDebtorId = new Map<string, number>()
+  // Deudas vinculadas: el deudor paga (gasto), el acreedor cobra (ingreso).
+  const paidBySharedDebtId = new Map<string, number>()
+  const collectedBySharedDebtId = new Map<string, number>()
   for (const t of allTx) {
     if (t.debt_id) paidByDebtId.set(t.debt_id, (paidByDebtId.get(t.debt_id) ?? 0) + -t.amount)
     if (t.debtor_id) collectedByDebtorId.set(t.debtor_id, (collectedByDebtorId.get(t.debtor_id) ?? 0) + t.amount)
+    if (t.shared_debt_id) {
+      if (t.amount < 0) paidBySharedDebtId.set(t.shared_debt_id, (paidBySharedDebtId.get(t.shared_debt_id) ?? 0) + -t.amount)
+      else collectedBySharedDebtId.set(t.shared_debt_id, (collectedBySharedDebtId.get(t.shared_debt_id) ?? 0) + t.amount)
+    }
   }
-  const debtStats: DebtStat[] = (debts ?? [])
-    .filter((d) => d.status !== 'archived' && (paidByDebtId.has(d.id) || d.status === 'active'))
-    .map((d) => ({ name: d.name, remainingToday: d.remaining_amount, paidThisMonth: paidByDebtId.get(d.id) ?? 0 }))
-  const debtorStats: DebtorStat[] = (debtors ?? [])
-    .filter((d) => d.status !== 'archived' && (collectedByDebtorId.has(d.id) || d.status === 'pending'))
-    .map((d) => ({
-      name: d.name,
-      remainingToday: d.remaining_amount,
-      collectedThisMonth: collectedByDebtorId.get(d.id) ?? 0,
-    }))
+  // Una deuda archivada igual aparece en el mes en que recibió pagos: archivarla
+  // hoy no puede borrar lo que pasó en un mes pasado.
+  const debtStats: DebtStat[] = [
+    ...(debts ?? [])
+      .filter((d) => paidByDebtId.has(d.id) || d.status === 'active')
+      .map((d) => ({ name: d.name, remainingToday: d.remaining_amount, paidThisMonth: paidByDebtId.get(d.id) ?? 0 })),
+    ...(sharedDebts ?? [])
+      .filter((d) => d.debtor_user_id === userId && (paidBySharedDebtId.has(d.id) || d.status === 'active'))
+      .map((d) => ({ name: d.name, remainingToday: d.remaining_amount, paidThisMonth: paidBySharedDebtId.get(d.id) ?? 0 })),
+  ]
+  const debtorStats: DebtorStat[] = [
+    ...(debtors ?? [])
+      .filter((d) => collectedByDebtorId.has(d.id) || d.status === 'pending')
+      .map((d) => ({
+        name: d.name,
+        remainingToday: d.remaining_amount,
+        collectedThisMonth: collectedByDebtorId.get(d.id) ?? 0,
+      })),
+    ...(sharedDebts ?? [])
+      .filter((d) => d.creditor_user_id === userId && (collectedBySharedDebtId.has(d.id) || d.status === 'active'))
+      .map((d) => ({
+        name: d.name,
+        remainingToday: d.remaining_amount,
+        collectedThisMonth: collectedBySharedDebtId.get(d.id) ?? 0,
+      })),
+  ]
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">

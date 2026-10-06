@@ -420,6 +420,9 @@ async function registerPastAmount(input: {
     amount: input.amount,
     type: 'extra_income',
     description: input.description,
+    // Plata que ya tenías al empezar: sube el acumulado pero NO es un ingreso
+    // del mes (Estadísticas lo deja afuera, migración 0037).
+    kind: 'opening_balance',
     ...(input.date ? { date: input.date } : {}),
   })
   if (error) {

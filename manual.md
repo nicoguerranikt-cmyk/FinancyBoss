@@ -557,12 +557,12 @@ Primer uso de archivos en el proyecto (hasta acá todo era filas en tablas) — 
 
 | Dato | Descripción |
 |---|---|
-| Ingreso total del mes | Base + extras registrados |
+| Ingreso total del mes | Base + ingresos extra **reales** (un bono, el cobro de un deudor, el pago que recibes de una deuda vinculada, la ganancia de una inversión, un "Ingreso" a Dinero libre). **No** cuentan los traslados entre tus propias cuentas (asignar Dinero libre a una categoría, aumentar un gasto fijo desde Ahorro, convertir USD a Bs), ni los saldos iniciales ("Ahorro previo"/"Inversión previa"), ni el reparto mensual, ni el "Sobrante del mes". Mover plata propia nunca es ingreso nuevo ni gasto |
 | Por pilar | Presupuesto asignado vs. gasto real, superávit o déficit |
 | Por subcategoría | Mismo desglose que por pilar |
 | Efecto dominó | Número de veces activado ese mes y categorías más afectadas |
-| Progreso de deudas | Monto pendiente y pagos registrados por deuda |
-| Deudores activos ese mes | Cobros recibidos y pendientes |
+| Progreso de deudas | Monto pendiente y pagos registrados por deuda (locales y vinculadas). Una deuda archivada igual aparece en el mes en que recibió pagos |
+| Deudores activos ese mes | Cobros recibidos y pendientes (locales y vinculadas) |
 | Saldo acumulado | Lo que pasó al mes siguiente por pilar |
 
 ### 8.3 Historial
@@ -648,6 +648,8 @@ description  → texto libre opcional
 date         → fecha del registro
 debt_id      → referencia a debts, opcional (pago de deuda con fuente pilar/categoría específica)
 debtor_id    → referencia a debtors, opcional (cobro de un deudor registrado como ingreso extra)
+kind         → "transfer" | "opening_balance" | null (migración 0037). transfer = un lado de un traslado entre cuentas propias; opening_balance = saldo inicial; null = ingreso o gasto real. Estadísticas excluye los que tienen kind
+transfer_id  → UUID, opcional. El mismo en los dos lados de un traslado, para vincularlos (también existe en free_money_transactions y usd_savings_transactions)
 created_at   → timestamp
 ```
 

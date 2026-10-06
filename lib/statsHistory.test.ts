@@ -1,5 +1,77 @@
 import { describe, expect, it } from 'vitest'
-import { categoryBudgetsForMonth, incomeForMonth } from '@/lib/statsHistory'
+import {
+  categoryBudgetsForMonth,
+  externalExtraIncome,
+  externalFreeMoneyIncome,
+  incomeForMonth,
+  isInternalMovement,
+} from '@/lib/statsHistory'
+
+const tx = (over: Partial<{ type: string; amount: number; is_allocation: boolean; kind: string | null }>) => ({
+  type: 'extra_income',
+  amount: 100,
+  is_allocation: false,
+  kind: null,
+  ...over,
+})
+
+describe('ingreso real: los traslados y saldos iniciales no cuentan (H09)', () => {
+  it('mover 100 Bs de Dinero libre a Ahorro NO es un ingreso nuevo', () => {
+    expect(externalExtraIncome([tx({ amount: 100, kind: 'transfer' })])).toBe(0)
+  })
+
+  it('ingresar de verdad 100 Bs sí es un ingreso', () => {
+    expect(externalExtraIncome([tx({ amount: 100 })])).toBe(100)
+  })
+
+  it('un saldo inicial ("Ahorro previo") no es un ingreso del mes', () => {
+    expect(externalExtraIncome([tx({ amount: 5000, kind: 'opening_balance' })])).toBe(0)
+  })
+
+  it('el reparto mensual no es un ingreso', () => {
+    expect(externalExtraIncome([tx({ amount: 1000, is_allocation: true })])).toBe(0)
+  })
+
+  it('un gasto nunca suma como ingreso', () => {
+    expect(externalExtraIncome([tx({ type: 'expense', amount: -50 })])).toBe(0)
+  })
+
+  it('mezcla: solo cuenta lo real (100 de bono; el traslado y el saldo inicial no)', () => {
+    expect(
+      externalExtraIncome([
+        tx({ amount: 100 }),
+        tx({ amount: 300, kind: 'transfer' }),
+        tx({ amount: 5000, kind: 'opening_balance' }),
+        tx({ amount: 1000, is_allocation: true }),
+      ])
+    ).toBe(100)
+  })
+
+  it('isInternalMovement reconoce reparto, traslado y saldo inicial', () => {
+    expect(isInternalMovement({ is_allocation: true, kind: null })).toBe(true)
+    expect(isInternalMovement({ is_allocation: false, kind: 'transfer' })).toBe(true)
+    expect(isInternalMovement({ is_allocation: false, kind: 'opening_balance' })).toBe(true)
+    expect(isInternalMovement({ is_allocation: false, kind: null })).toBe(false)
+  })
+})
+
+describe('externalFreeMoneyIncome — ingresos a Dinero libre', () => {
+  it('un ingreso a mano en Dinero libre sí cuenta en el total del mes', () => {
+    expect(externalFreeMoneyIncome([{ amount: 100, kind: null, credit_month: null }])).toBe(100)
+  })
+
+  it('asignar Dinero libre a una categoría (traslado, negativo) no cuenta', () => {
+    expect(externalFreeMoneyIncome([{ amount: -100, kind: 'transfer', credit_month: null }])).toBe(0)
+  })
+
+  it('el "Sobrante del mes" del cierre no es plata nueva', () => {
+    expect(externalFreeMoneyIncome([{ amount: 700, kind: null, credit_month: 9 }])).toBe(0)
+  })
+
+  it('un gasto a mano de Dinero libre no suma como ingreso', () => {
+    expect(externalFreeMoneyIncome([{ amount: -40, kind: null, credit_month: null }])).toBe(0)
+  })
+})
 
 describe('incomeForMonth — cambiar el sueldo no altera los meses pasados (H08)', () => {
   it('septiembre cerró con 3.000: sigue mostrando 3.000 aunque hoy el sueldo sea 4.000', () => {
