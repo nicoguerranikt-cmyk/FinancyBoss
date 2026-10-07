@@ -10,7 +10,7 @@ Los números de esta guía los comprueba el test [`lib/simulacion.test.ts`](../l
 
 ## 0. Antes de empezar
 
-- [ ] Las migraciones **0001 a 0039** están aplicadas en Supabase (sobre todo 0032 a 0039). La **0039** es la del onboarding de Gasto: sin ella el onboarding falla al terminar.
+- [ ] Las migraciones **0001 a 0040** están aplicadas en Supabase (sobre todo 0032 a 0040). La **0039** y la **0040** son las del onboarding de Gasto (monto del pilar y fecha de cobro): sin ellas el onboarding falla al terminar. Aplícalas **en orden**.
 - [ ] Borraste todos los usuarios (Authentication → Users). Comprueba con: `select count(*) from auth.users;` → `0`.
 - [ ] Tienes **dos correos** para dos cuentas: **A** (la principal) y **B** (para las deudas vinculadas y el ingreso insuficiente).
 - [ ] La app corre (`npm run dev`) o está desplegada, apuntando a ese Supabase.
@@ -32,24 +32,29 @@ Los números de esta guía los comprueba el test [`lib/simulacion.test.ts`](../l
 | 1.4 | Inicia sesión bien | Te lleva al **onboarding** |
 | 1.5 | Ingreso **3000**, "repetir cada mes" **activado** | Puedes continuar |
 | 1.6 | **Ahorro:** marca `Fondo de emergencia` y ponle monto **300** (desmarca las demás) | — |
-| 1.7 | **Gastos fijos** (el paso de Gasto): en "¿Cuánto de tu ingreso va a Gasto cada mes?" escribe **1300,50** | Escribe con centavos: no se redondea |
-| 1.8 | En "Tus gastos fijos" marca `Alquiler` con **800** (desmarca los demás) | Debe decir: Gasto 1.300,50 · Fijos 800 · **para el día a día te quedan 500,50 Bs** |
-| 1.9 | En "Gastos del día a día" marca `Comida` y `Transporte` (**no tienen campo de monto**) | No hay ningún campo de monto en esa lista |
-| 1.10 | **Inversión:** marca una categoría `Acciones` y ponle **200** | Resumen: total asignado **1.800,50**, libre **1.199,50** |
-| 1.11 | Termina el onboarding | Llegas al Dashboard |
+| 1.7 | Llegas a la pantalla **Gastos fijos** | Explica que aquí van los gastos que pagas todos los meses (alquiler, suscripciones…), que el monto se descuenta de tu ingreso, y que puedes elegir una **fecha de cobro** |
+| 1.8 | En "¿Cuánto de tu ingreso va a Gasto cada mes?" escribe **1300,50** | Escribe con centavos: no se redondea |
+| 1.9 | En "Tus gastos fijos" marca `Alquiler` con **800** (desmarca los demás) y pon **fecha de cobro = hoy** | Al poner el monto aparece el campo "Fecha de cobro (opcional)". La línea dice: Gasto 1.300,50 · Fijos 800 · **para el día a día te quedan 500,50 Bs** |
+| 1.10 | Pulsa **Continuar** | Pasas a la pantalla **Gastos del día a día** (aparte) |
+| 1.11 | Léela y marca `Comida` y `Transporte` | Explica que son los gastos que no son fijos y que **no llevan monto**. Muestra "500,50 Bs" para el día a día. **No hay ningún campo de monto** en esa lista |
+| 1.12 | **Inversión:** marca una categoría `Acciones` y ponle **200** | Resumen: total asignado **1.800,50**, libre **1.199,50** |
+| 1.13 | Termina el onboarding | Llegas al Dashboard |
 
-> Prueba extra del paso 1.8: pon un gasto fijo mayor que el monto de Gasto (por ejemplo 2000). El botón **Continuar** debe quedar bloqueado con el aviso "tus gastos fijos suman… más que el monto de Gasto".
+El onboarding tiene **7 pantallas** (se ven 7 barras arriba): Bienvenida, Ingreso, Ahorro, Gastos fijos, Gastos del día a día, Inversión y Dinero libre.
 
-**Qué debe mostrar el Dashboard (paso 1.11):**
+> Prueba extra del paso 1.9: pon un gasto fijo mayor que el monto de Gasto (por ejemplo 2000). El botón **Continuar** debe quedar bloqueado con el aviso "tus gastos fijos suman… más que el monto de Gasto". Luego vuelve a poner 800.
+
+**Qué debe mostrar el Dashboard (paso 1.13):**
 
 | Dato | Valor |
 |---|---|
 | Ahorro | 300 |
-| Gasto | 1.300,50 |
+| Gasto | 1.300,50 (el presupuesto **no baja** por el alquiler hasta que lo confirmes) |
 | Inversión | 200 |
 | Dinero libre | 1.199,50 |
+| Aviso | "Tienes **1 gasto fijo pendiente** de confirmar" (porque la fecha de cobro del Alquiler es hoy) |
 
-**Mi Dinero:** Fondo 300 · Gastos fijos: Alquiler 800 · Gastos variables (día a día): Comida y Transporte, sin presupuesto, más los 500,50 de "Gasto general" · Acciones 200.
+**Mi Dinero:** Fondo 300 · Gastos fijos: Alquiler 800 (pendiente) · Gastos variables (día a día): Comida y Transporte, sin presupuesto, más los 500,50 de "Gasto general" · Acciones 200.
 **Más → Configuración:** el selector de **Zona horaria** muestra la de tu dispositivo.
 
 ---
@@ -80,7 +85,7 @@ Comprobaciones extra:
 
 | # | Acción | Debe pasar |
 |---|---|---|
-| 3.1 | En Alquiler, activa el **descuento automático** con primera cuota **hoy** | Aparece el aviso "Tienes 1 gasto fijo pendiente de confirmar" (aunque ya haya un reparto este mes) |
+| 3.1 | Vuelve al Dashboard (el Alquiler se programó en el onboarding con fecha de cobro **hoy**, cada mes) | El aviso "Tienes 1 gasto fijo pendiente de confirmar" **sigue ahí**, aunque ya hubo reparto, ingresos y aumentos después. Un reparto o ingreso posterior no cuenta como pago |
 | 3.2 | Confirma con **"Ya lo pagué"** | Gasto baja a **538**. Alquiler: asignado 850, usado 800, restante **50** |
 | 3.3 | Pulsa "Ya lo pagué" otra vez (o recarga y repite) | Rechaza: **ya está confirmado** |
 | 3.4 | **Deudas:** crea `Préstamo` por **600**, sin plan | Se crea; ningún saldo cambia |

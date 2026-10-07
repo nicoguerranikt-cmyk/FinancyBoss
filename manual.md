@@ -32,7 +32,7 @@
 
 ### 1.2 Onboarding
 
-El onboarding es **obligatorio**. El usuario no puede acceder al dashboard hasta completarlo. Consta de 6 pantallas en orden fijo. **Migración 0030:** ya no hay una pantalla de "monto total por pilar" separada de las categorías — hay una pantalla por pilar, y el monto de cada pilar sale de sumar el de sus propias categorías (no se puede saltear ningún pilar sin pasar por su pantalla).
+El onboarding es **obligatorio**. El usuario no puede acceder al dashboard hasta completarlo. Consta de **7 pantallas** en orden fijo (Gasto ocupa dos: Gastos fijos y Gastos del día a día). **Migración 0030:** ya no hay una pantalla de "monto total por pilar" separada de las categorías — hay una pantalla por pilar, y el monto de cada pilar sale de sumar el de sus propias categorías (no se puede saltear ningún pilar sin pasar por su pantalla).
 
 ---
 
@@ -70,12 +70,17 @@ Mismo formato en los 3 pilares, en este orden fijo. Por cada pilar:
 - Botón **"Continuar"** (bloqueado solo si la suma total ya supera el ingreso — "no se puede fabricar plata de la nada"; sumar menos es válido y normal).
 - Botón **"Atrás"** vuelve al pilar anterior (o a Ingreso mensual desde Ahorro) sin perder lo ya cargado.
 
-**La pantalla de Gasto es distinta (migración 0039)**, porque en Gasto hay dos cosas diferentes y no se mezclan:
+**Gasto se divide en dos pantallas (migraciones 0039 y 0040)**, porque en Gasto hay dos cosas diferentes y no se mezclan:
 
+*Pantalla "Gastos fijos":*
+- Explica que aquí van los gastos que se pagan todos los meses (alquiler, suscripciones, servicios, internet…) y que el monto de cada uno se descuenta del ingreso.
 - **Monto del pilar:** el usuario escribe cuánto de su ingreso se descuenta cada mes para Gasto (`pillars.monthly_amount`). Si lo deja vacío, es la suma de sus gastos fijos.
-- **Gastos fijos** (el paso se titula "Gastos fijos"): categorías **con monto** (alquiler, servicios, internet…). Salen del monto del pilar. Sus montos no pueden sumar más que el monto de Gasto.
-- **Gastos del día a día:** categorías **sin monto** (Comida, Transporte, Ocio…), solo para registrar en qué se gasta. **Nunca llevan un monto propio.**
-- **Dinero para el día a día = monto de Gasto − gastos fijos.** Lo calcula la app (no se escribe) y es lo que alimenta el presupuesto diario ("Puedes gastar hoy"). La pantalla lo muestra en vivo, con lo que equivale por día.
+- **Gastos fijos:** categorías **con monto**. Salen del monto del pilar y no pueden sumar más que él (si lo superan, "Continuar" se bloquea).
+- **Fecha de cobro (opcional)** por gasto fijo: si la pone, la categoría queda programada cada mes desde esa fecha (`auto_repeat`, frecuencia de 1 mes). Al llegar la fecha la app avisa y el usuario confirma con "Ya lo pagué": nunca se descuenta sola. Queda "recién cuando llega la fecha" (`fixed_reserve_ahead = false`): el presupuesto diario no baja hasta que toca la cuota. Se puede cambiar después en la categoría.
+
+*Pantalla "Gastos del día a día":*
+- Explica que son los gastos que no son fijos (comida, transporte, salidas…) y que aquí **solo se crean categorías**, para ordenar lo que se gasta cada día. **Nunca llevan un monto propio.**
+- **Dinero para el día a día = monto de Gasto − gastos fijos.** Lo calcula la app (no se escribe) y es lo que alimenta el presupuesto diario ("Puedes gastar hoy"). La pantalla lo muestra, con lo que equivale por día.
 
 Subcategorías sugeridas por pilar:
 

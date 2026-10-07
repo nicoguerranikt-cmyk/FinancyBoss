@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { isValidTimeZone } from '@/lib/dashboard'
+import { validateRecurrenceSchedule } from '@/lib/recurrence'
 
 export type PillarKey = 'ahorro' | 'gasto' | 'inversion'
 
@@ -13,7 +14,9 @@ export type OnboardingInput = {
   // Migración 0030: ya no se pide un monto por pilar aparte — el monto de
   // cada pilar sale de sumar el de sus categorías (amount ausente o 0 = sin
   // monto fijo, queda como bolsa variable de ese pilar).
-  categories: { pillar: PillarKey; name: string; amount?: number }[]
+  // dueDate (YYYY-MM-DD): fecha de cobro de un gasto fijo (solo Gasto con
+  // monto). Queda programado cada mes desde esa fecha (migración 0040).
+  categories: { pillar: PillarKey; name: string; amount?: number; dueDate?: string }[]
   // Cuánto de tu ingreso se descuenta cada mes para Gasto (migración 0039). Los
   // gastos fijos (categorías de Gasto con monto) salen de ese monto, y lo que
   // queda es el dinero para el día a día. Si falta, el monto de Gasto es la
@@ -34,6 +37,14 @@ export async function completeOnboarding(
   }
   if (input.categories.some((c) => c.amount !== undefined && c.amount < 0)) {
     return { error: 'Los montos de las categorías no pueden ser negativos.' }
+  }
+  for (const c of input.categories) {
+    if (c.dueDate === undefined) continue
+    if (c.pillar !== 'gasto' || !(c.amount && c.amount > 0)) {
+      return { error: 'Solo un gasto fijo con monto puede tener fecha de cobro.' }
+    }
+    const scheduleError = validateRecurrenceSchedule({ startDate: c.dueDate, intervalUnit: 'month', intervalCount: 1 })
+    if (scheduleError) return { error: `La fecha de cobro de "${c.name}" no es válida.` }
   }
   if (input.gastoAmount !== undefined && !(input.gastoAmount >= 0)) {
     return { error: 'El monto de Gasto no puede ser negativo.' }
@@ -75,7 +86,8 @@ export async function completeOnboarding(
     p_income: input.income,
     p_auto_repeat: input.autoRepeat,
     p_name: name,
-    p_categories: input.categories,
+    // dueDate se manda como start_date, el nombre que lee la función SQL.
+    p_categories: input.categories.map(({ dueDate, ...c }) => ({ ...c, start_date: dueDate ?? null })),
     p_username: username,
     p_gasto_amount: input.gastoAmount ?? null,
   })

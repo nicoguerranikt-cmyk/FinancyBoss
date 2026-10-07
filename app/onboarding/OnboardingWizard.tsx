@@ -29,7 +29,8 @@ const PILLAR_LABEL: Record<PillarKey, string> = {
 }
 
 // daily: categoría de gasto del día a día (solo en Gasto) — nunca lleva monto.
-type CatItem = { name: string; checked: boolean; amount: string; daily?: boolean }
+// dueDate: fecha de cobro (YYYY-MM-DD) de un gasto fijo — opcional.
+type CatItem = { name: string; checked: boolean; amount: string; daily?: boolean; dueDate?: string }
 
 // Sin marcar por default: si el usuario no toca nada acá, termina con solo
 // las 3 categorías "general" (las crea complete_onboarding() aparte,
@@ -47,8 +48,10 @@ function initialCats(): Record<PillarKey, CatItem[]> {
 }
 
 const PILLAR_KEYS: PillarKey[] = ['ahorro', 'gasto', 'inversion']
-const DINERO_LIBRE_STEP = 2 + PILLAR_KEYS.length // paso final, después del último pilar
-const TOTAL_STEPS = DINERO_LIBRE_STEP + 1 // bienvenida + ingreso + 1 por pilar + dinero libre
+// Gasto ocupa DOS pantallas: los gastos fijos (con monto y fecha de cobro) y los
+// gastos del día a día (solo categorías, sin monto).
+const STEPS = ['bienvenida', 'ingreso', 'ahorro', 'gasto-fijos', 'gasto-diario', 'inversion', 'libre'] as const
+const TOTAL_STEPS = STEPS.length
 
 export default function OnboardingWizard({ userName }: { userName: string }) {
   const [step, setStep] = useState(0)
@@ -74,6 +77,7 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
   // fijos salen de ahí; lo que queda es el dinero para el día a día.
   const [gastoAmount, setGastoAmount] = useState('')
   const [newDaily, setNewDaily] = useState('')
+  const [newDueDate, setNewDueDate] = useState('')
 
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -133,16 +137,27 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
     })
   }
 
+  function setCatDueDate(index: number, value: string) {
+    setCats((prev) => {
+      const copy = { ...prev, gasto: [...prev.gasto] }
+      copy.gasto[index] = { ...copy.gasto[index], dueDate: value || undefined }
+      return copy
+    })
+  }
+
   function addCat(pillar: PillarKey) {
     const name = newCat[pillar].trim()
     if (!name) return
     const amount = newAmount[pillar].trim()
+    // La fecha de cobro solo existe para un gasto fijo (Gasto con monto).
+    const dueDate = pillar === 'gasto' && Number(amount) > 0 && newDueDate ? newDueDate : undefined
     setCats((prev) => ({
       ...prev,
-      [pillar]: [...prev[pillar], { name, checked: true, amount }],
+      [pillar]: [...prev[pillar], { name, checked: true, amount, dueDate }],
     }))
     setNewCat((prev) => ({ ...prev, [pillar]: '' }))
     setNewAmount((prev) => ({ ...prev, [pillar]: '' }))
+    setNewDueDate('')
   }
 
   function addDaily() {
@@ -159,7 +174,11 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
       cats[pillar]
         .filter((c) => c.checked)
         // Un gasto del día a día nunca lleva monto.
-        .map((c) => ({ pillar, name: c.name, amount: c.daily ? undefined : Number(c.amount) || undefined }))
+        .map((c) => {
+          const amount = c.daily ? undefined : Number(c.amount) || undefined
+          // Solo un gasto fijo con monto lleva fecha de cobro.
+          return { pillar, name: c.name, amount, dueDate: pillar === 'gasto' && amount ? c.dueDate : undefined }
+        })
     )
     const res = await completeOnboarding({
       income: incomeNumber,
@@ -177,8 +196,9 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
     }
   }
 
-  const pillarStepIndex = step - 2 // 0, 1, 2 dentro de PILLAR_KEYS, solo válido en pasos 2-4
-  const pillar = PILLAR_KEYS[pillarStepIndex]
+  const kind = STEPS[step]
+  // Pilares con una sola pantalla (Ahorro e Inversión). Gasto tiene dos: ver STEPS.
+  const pillar: 'ahorro' | 'inversion' | null = kind === 'ahorro' || kind === 'inversion' ? kind : null
 
   return (
     <main className="flex flex-1 items-center justify-center px-4 py-10">
@@ -280,13 +300,18 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
           </section>
         )}
 
-        {/* ---------- Paso de Gasto: monto del pilar + fijos con monto + día a día sin monto ---------- */}
-        {pillar === 'gasto' && (
+        {/* ---------- Gastos fijos: monto del pilar + fijos con monto y fecha de cobro ---------- */}
+        {kind === 'gasto-fijos' && (
           <section>
             <h2 className="text-xl font-semibold tracking-tight">Gastos fijos</h2>
             <p className="mt-1 text-sm text-zinc-500">
-              Define cuánto de tu ingreso se descuenta cada mes para Gasto. Dentro de ese monto,
-              agrega tus gastos fijos (los que pagas todos los meses) con su monto.
+              Aquí van los gastos que pagas todos los meses: el alquiler, las suscripciones, los
+              servicios, el internet… Si le pones un monto a un gasto fijo, ese monto se descuenta
+              de tu ingreso cada mes.
+            </p>
+            <p className="mt-2 text-sm text-zinc-500">
+              También puedes elegir la <strong>fecha de cobro</strong>: cuando llegue, te avisamos y
+              tú confirmas el pago. Nunca se descuenta solo.
             </p>
 
             <div className="mt-6 flex flex-col gap-1">
@@ -306,39 +331,54 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
                 className="rounded-lg border border-zinc-300 px-3 py-2 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
               />
               <p className="text-xs text-zinc-500">
-                Si lo dejas vacío, Gasto es la suma de tus gastos fijos y no te queda nada para el
-                día a día.
+                Incluye tus gastos fijos y lo que quieras tener para el día a día (lo ves en el
+                paso siguiente). Si lo dejas vacío, Gasto es solo la suma de tus gastos fijos.
               </p>
             </div>
 
             <h3 className="mt-6 text-sm font-medium">Tus gastos fijos</h3>
-            <div className="mt-2 flex flex-col gap-2">
+            <div className="mt-2 flex flex-col gap-3">
               {cats.gasto.map((cat, i) =>
                 cat.daily ? null : (
-                  <div key={`${cat.name}-${i}`} className="flex items-center gap-3 text-sm">
-                    <label className="flex flex-1 items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={cat.checked}
-                        onChange={() => toggleCat('gasto', i)}
-                        className="h-4 w-4 shrink-0"
-                      />
-                      {cat.name}
-                    </label>
-                    {cat.checked && (
-                      <div className="flex items-center gap-1">
+                  <div key={`${cat.name}-${i}`} className="flex flex-col gap-2">
+                    <div className="flex items-center gap-3 text-sm">
+                      <label className="flex flex-1 items-center gap-3">
                         <input
-                          type="number"
-                          step="any"
-                          onWheel={(e) => e.currentTarget.blur()}
-                          inputMode="decimal"
-                          min={0}
-                          value={cat.amount}
-                          onChange={(e) => setCatAmount('gasto', i, e.target.value)}
-                          placeholder="0"
-                          className="w-20 rounded-lg border border-zinc-300 px-2 py-1 text-right outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
+                          type="checkbox"
+                          checked={cat.checked}
+                          onChange={() => toggleCat('gasto', i)}
+                          className="h-4 w-4 shrink-0"
                         />
-                        <span className="text-xs text-zinc-500">Bs</span>
+                        {cat.name}
+                      </label>
+                      {cat.checked && (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            step="any"
+                            onWheel={(e) => e.currentTarget.blur()}
+                            inputMode="decimal"
+                            min={0}
+                            value={cat.amount}
+                            onChange={(e) => setCatAmount('gasto', i, e.target.value)}
+                            placeholder="0"
+                            aria-label={`Monto de ${cat.name}`}
+                            className="w-20 rounded-lg border border-zinc-300 px-2 py-1 text-right outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
+                          />
+                          <span className="text-xs text-zinc-500">Bs</span>
+                        </div>
+                      )}
+                    </div>
+                    {cat.checked && Number(cat.amount) > 0 && (
+                      <div className="ml-7 flex items-center gap-2 text-xs text-zinc-500">
+                        <label htmlFor={`due-${i}`}>Fecha de cobro (opcional)</label>
+                        <input
+                          id={`due-${i}`}
+                          type="date"
+                          value={cat.dueDate ?? ''}
+                          onChange={(e) => setCatDueDate(i, e.target.value)}
+                          className="rounded-lg border border-zinc-300 px-2 py-1 text-xs outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
+                        />
                       </div>
                     )}
                   </div>
@@ -346,47 +386,58 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
               )}
             </div>
 
-            <div className="mt-3 flex gap-2">
-              <input
-                type="text"
-                value={newCat.gasto}
-                onChange={(e) => setNewCat((prev) => ({ ...prev, gasto: e.target.value }))}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    addCat('gasto')
-                  }
-                }}
-                placeholder="Agregar gasto fijo"
-                className="flex-1 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
-              />
-              <input
-                type="number"
-                step="any"
-                onWheel={(e) => e.currentTarget.blur()}
-                inputMode="decimal"
-                min={0}
-                value={newAmount.gasto}
-                onChange={(e) => setNewAmount((prev) => ({ ...prev, gasto: e.target.value }))}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    addCat('gasto')
-                  }
-                }}
-                placeholder="Monto (Bs)"
-                className="w-24 rounded-lg border border-zinc-300 px-2 py-1.5 text-right text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
-              />
-              <button
-                type="button"
-                onClick={() => addCat('gasto')}
-                className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-              >
-                Agregar
-              </button>
+            <div className="mt-4 flex flex-col gap-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newCat.gasto}
+                  onChange={(e) => setNewCat((prev) => ({ ...prev, gasto: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      addCat('gasto')
+                    }
+                  }}
+                  placeholder="Agregar gasto fijo"
+                  className="flex-1 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
+                />
+                <input
+                  type="number"
+                  step="any"
+                  onWheel={(e) => e.currentTarget.blur()}
+                  inputMode="decimal"
+                  min={0}
+                  value={newAmount.gasto}
+                  onChange={(e) => setNewAmount((prev) => ({ ...prev, gasto: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      addCat('gasto')
+                    }
+                  }}
+                  placeholder="Monto (Bs)"
+                  className="w-24 rounded-lg border border-zinc-300 px-2 py-1.5 text-right text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
+                />
+                <button
+                  type="button"
+                  onClick={() => addCat('gasto')}
+                  className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                >
+                  Agregar
+                </button>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-zinc-500">
+                <label htmlFor="newDueDate">Fecha de cobro (opcional)</label>
+                <input
+                  id="newDueDate"
+                  type="date"
+                  value={newDueDate}
+                  onChange={(e) => setNewDueDate(e.target.value)}
+                  className="rounded-lg border border-zinc-300 px-2 py-1 text-xs outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
+                />
+              </div>
             </div>
 
-            {/* Lo que queda del monto de Gasto después de los fijos: el dinero para el día a día. */}
             <div
               className={`mt-4 rounded-lg px-3 py-2 text-sm ${
                 gastoCoversFixed
@@ -395,15 +446,55 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
               }`}
             >
               {gastoCoversFixed
-                ? `Gasto: ${formatBs(gastoPillarAmount)} Bs. Fijos: ${formatBs(gastoFixedTotal)} Bs. Para el día a día te quedan ${formatBs(gastoDailyPool)} Bs (unos ${formatBs(gastoDailyPool / previewDaysRemaining)} Bs por día).`
+                ? `Gasto: ${formatBs(gastoPillarAmount)} Bs. Fijos: ${formatBs(gastoFixedTotal)} Bs. Para el día a día te quedan ${formatBs(gastoDailyPool)} Bs.`
                 : `Tus gastos fijos suman ${formatBs(gastoFixedTotal)} Bs, más que el monto de Gasto (${formatBs(gastoPillarAmount)} Bs).`}
             </div>
 
-            <h3 className="mt-6 text-sm font-medium">Gastos del día a día</h3>
-            <p className="mt-1 text-xs text-zinc-500">
-              Estas categorías no llevan monto: solo sirven para registrar en qué gastas. Lo que
-              gastes sale del dinero para el día a día.
+            {!canContinueAllocation && (
+              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+                En total llevas asignados {formatBs(totalAllocated)} Bs, más que tu ingreso ({formatBs(incomeNumber)} Bs).
+              </p>
+            )}
+
+            <div className="mt-8 flex gap-3">
+              <button
+                onClick={() => setStep(step - 1)}
+                className="rounded-lg border border-zinc-300 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                Atrás
+              </button>
+              <button
+                onClick={() => setStep(step + 1)}
+                disabled={!canContinueAllocation || !gastoCoversFixed}
+                className="flex-1 rounded-lg bg-zinc-900 py-2.5 font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+              >
+                Continuar
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* ---------- Gastos del día a día: solo categorías, sin monto ---------- */}
+        {kind === 'gasto-diario' && (
+          <section>
+            <h2 className="text-xl font-semibold tracking-tight">Gastos del día a día</h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              Son los gastos que no son fijos: la comida, el transporte, las salidas… Aquí solo
+              creas categorías para ordenar lo que gastas cada día. <strong>No llevan monto</strong>:
+              cada vez que gastes algo, lo registras en una de estas categorías.
             </p>
+
+            <div className="mt-4 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+              <p className="text-sm text-zinc-500">Lo que gastes sale de tu dinero para el día a día</p>
+              <p className="text-2xl font-semibold tracking-tight tabular-nums">{formatBs(gastoDailyPool)} Bs</p>
+              <p className="mt-1 text-xs text-zinc-500">
+                Es lo que queda de Gasto ({formatBs(gastoPillarAmount)} Bs) después de tus gastos fijos (
+                {formatBs(gastoFixedTotal)} Bs). Repartido en lo que queda de este mes, son unos{' '}
+                {formatBs(gastoDailyPool / previewDaysRemaining)} Bs por día.
+              </p>
+            </div>
+
+            <h3 className="mt-6 text-sm font-medium">Tus categorías del día a día</h3>
             <div className="mt-2 flex flex-col gap-2">
               {cats.gasto.map((cat, i) =>
                 cat.daily ? (
@@ -430,7 +521,7 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
                     addDaily()
                   }
                 }}
-                placeholder="Agregar categoría del día a día"
+                placeholder="Agregar categoría"
                 className="flex-1 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
               />
               <button
@@ -441,17 +532,9 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
                 Agregar
               </button>
             </div>
-
-            {!canContinueAllocation && (
-              <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
-                En total llevas asignados {formatBs(totalAllocated)} Bs, más que tu ingreso ({formatBs(incomeNumber)} Bs).
-              </p>
-            )}
-            {canContinueAllocation && (
-              <p className="mt-4 text-xs text-zinc-500">
-                Te quedan {formatBs(freeMoney)} Bs libres de tu ingreso ({formatBs(incomeNumber)} Bs).
-              </p>
-            )}
+            <p className="mt-2 text-xs text-zinc-500">
+              Si no marcas ninguna, igual puedes registrar tus gastos del día a día sin categoría.
+            </p>
 
             <div className="mt-8 flex gap-3">
               <button
@@ -462,8 +545,7 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
               </button>
               <button
                 onClick={() => setStep(step + 1)}
-                disabled={!canContinueAllocation || !gastoCoversFixed}
-                className="flex-1 rounded-lg bg-zinc-900 py-2.5 font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                className="flex-1 rounded-lg bg-zinc-900 py-2.5 font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
               >
                 Continuar
               </button>
@@ -472,7 +554,7 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
         )}
 
         {/* ---------- Pasos de Ahorro e Inversión: categorías, cada una con su monto opcional ---------- */}
-        {pillar && pillar !== 'gasto' && (
+        {pillar && (
           <section>
             <h2 className="text-xl font-semibold tracking-tight">{PILLAR_LABEL[pillar]}</h2>
             <p className="mt-1 text-sm text-zinc-500">
@@ -583,7 +665,7 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
         )}
 
         {/* ---------- Paso final: Dinero libre ---------- */}
-        {step === DINERO_LIBRE_STEP && (
+        {kind === 'libre' && (
           <section>
             <h2 className="text-xl font-semibold tracking-tight">Dinero libre</h2>
             <p className="mt-1 text-sm text-zinc-500">
