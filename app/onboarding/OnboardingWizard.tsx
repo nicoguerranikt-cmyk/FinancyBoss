@@ -12,11 +12,15 @@ import { formatBs } from '@/lib/format'
 import { completeOnboarding, type PillarKey } from './actions'
 
 // Subcategorías sugeridas por pilar (tabla del manual, sección 1.2, pantalla 3).
+// En Gasto las sugeridas son GASTOS FIJOS (llevan monto). Los gastos del día a
+// día van aparte (SUGGESTED_DAILY) y nunca llevan monto: solo sirven para
+// registrar en qué se gasta.
 const SUGGESTED: Record<PillarKey, string[]> = {
   ahorro: ['Fondo de emergencia', 'Viajes', 'Meta específica', 'Imprevistos'],
-  gasto: ['Comida', 'Transporte', 'Vivienda', 'Gastos diarios'],
+  gasto: ['Alquiler', 'Servicios básicos', 'Internet', 'Suscripciones'],
   inversion: ['Proyecto personal', 'Educación', 'Otro'],
 }
+const SUGGESTED_DAILY = ['Comida', 'Transporte', 'Ocio']
 
 const PILLAR_LABEL: Record<PillarKey, string> = {
   ahorro: 'Ahorro',
@@ -24,7 +28,8 @@ const PILLAR_LABEL: Record<PillarKey, string> = {
   inversion: 'Inversión',
 }
 
-type CatItem = { name: string; checked: boolean; amount: string }
+// daily: categoría de gasto del día a día (solo en Gasto) — nunca lleva monto.
+type CatItem = { name: string; checked: boolean; amount: string; daily?: boolean }
 
 // Sin marcar por default: si el usuario no toca nada acá, termina con solo
 // las 3 categorías "general" (las crea complete_onboarding() aparte,
@@ -33,7 +38,10 @@ type CatItem = { name: string; checked: boolean; amount: string }
 function initialCats(): Record<PillarKey, CatItem[]> {
   return {
     ahorro: SUGGESTED.ahorro.map((name) => ({ name, checked: false, amount: '' })),
-    gasto: SUGGESTED.gasto.map((name) => ({ name, checked: false, amount: '' })),
+    gasto: [
+      ...SUGGESTED.gasto.map((name) => ({ name, checked: false, amount: '' })),
+      ...SUGGESTED_DAILY.map((name) => ({ name, checked: false, amount: '', daily: true })),
+    ],
     inversion: SUGGESTED.inversion.map((name) => ({ name, checked: false, amount: '' })),
   }
 }
@@ -62,13 +70,29 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
     inversion: '',
   })
 
+  // Gasto: cuánto de tu ingreso se descuenta cada mes para Gasto. Los gastos
+  // fijos salen de ahí; lo que queda es el dinero para el día a día.
+  const [gastoAmount, setGastoAmount] = useState('')
+  const [newDaily, setNewDaily] = useState('')
+
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   const incomeNumber = Number(income) || 0
   const canContinueIncome = incomeNumber > 0
 
+  // Gastos fijos de Gasto: las categorías marcadas que NO son del día a día.
+  const gastoFixedTotal = cats.gasto
+    .filter((c) => c.checked && !c.daily)
+    .reduce((sum, c) => sum + (Number(c.amount) || 0), 0)
+  const gastoAmountNumber = Number(gastoAmount) || 0
+  // Si no escribes el monto de Gasto, es la suma de tus gastos fijos.
+  const gastoPillarAmount = gastoAmountNumber > 0 ? gastoAmountNumber : gastoFixedTotal
+  const gastoDailyPool = gastoPillarAmount - gastoFixedTotal
+  const gastoCoversFixed = gastoPillarAmount >= gastoFixedTotal
+
   function pillarTotal(pillar: PillarKey) {
+    if (pillar === 'gasto') return gastoPillarAmount
     return cats[pillar]
       .filter((c) => c.checked)
       .reduce((sum, c) => sum + (Number(c.amount) || 0), 0)
@@ -121,18 +145,27 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
     setNewAmount((prev) => ({ ...prev, [pillar]: '' }))
   }
 
+  function addDaily() {
+    const name = newDaily.trim()
+    if (!name) return
+    setCats((prev) => ({ ...prev, gasto: [...prev.gasto, { name, checked: true, amount: '', daily: true }] }))
+    setNewDaily('')
+  }
+
   async function handleFinish() {
     setError(null)
     setSubmitting(true)
     const categories = PILLAR_KEYS.flatMap((pillar) =>
       cats[pillar]
         .filter((c) => c.checked)
-        .map((c) => ({ pillar, name: c.name, amount: Number(c.amount) || undefined }))
+        // Un gasto del día a día nunca lleva monto.
+        .map((c) => ({ pillar, name: c.name, amount: c.daily ? undefined : Number(c.amount) || undefined }))
     )
     const res = await completeOnboarding({
       income: incomeNumber,
       autoRepeat,
       categories,
+      gastoAmount: gastoAmountNumber > 0 ? gastoAmountNumber : undefined,
       // La zona horaria del dispositivo: define qué es "hoy" y dónde termina
       // cada mes para este usuario.
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -247,14 +280,205 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
           </section>
         )}
 
-        {/* ---------- Pasos 2-4: una pantalla por pilar ---------- */}
-        {pillar && (
+        {/* ---------- Paso de Gasto: monto del pilar + fijos con monto + día a día sin monto ---------- */}
+        {pillar === 'gasto' && (
+          <section>
+            <h2 className="text-xl font-semibold tracking-tight">Gastos fijos</h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              Define cuánto de tu ingreso se descuenta cada mes para Gasto. Dentro de ese monto,
+              agrega tus gastos fijos (los que pagas todos los meses) con su monto.
+            </p>
+
+            <div className="mt-6 flex flex-col gap-1">
+              <label htmlFor="gastoAmount" className="text-sm font-medium">
+                ¿Cuánto de tu ingreso va a Gasto cada mes? (Bs)
+              </label>
+              <input
+                id="gastoAmount"
+                type="number"
+                step="any"
+                onWheel={(e) => e.currentTarget.blur()}
+                inputMode="decimal"
+                min={0}
+                value={gastoAmount}
+                onChange={(e) => setGastoAmount(e.target.value)}
+                placeholder="Ej. 1300"
+                className="rounded-lg border border-zinc-300 px-3 py-2 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
+              />
+              <p className="text-xs text-zinc-500">
+                Si lo dejas vacío, Gasto es la suma de tus gastos fijos y no te queda nada para el
+                día a día.
+              </p>
+            </div>
+
+            <h3 className="mt-6 text-sm font-medium">Tus gastos fijos</h3>
+            <div className="mt-2 flex flex-col gap-2">
+              {cats.gasto.map((cat, i) =>
+                cat.daily ? null : (
+                  <div key={`${cat.name}-${i}`} className="flex items-center gap-3 text-sm">
+                    <label className="flex flex-1 items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={cat.checked}
+                        onChange={() => toggleCat('gasto', i)}
+                        className="h-4 w-4 shrink-0"
+                      />
+                      {cat.name}
+                    </label>
+                    {cat.checked && (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          step="any"
+                          onWheel={(e) => e.currentTarget.blur()}
+                          inputMode="decimal"
+                          min={0}
+                          value={cat.amount}
+                          onChange={(e) => setCatAmount('gasto', i, e.target.value)}
+                          placeholder="0"
+                          className="w-20 rounded-lg border border-zinc-300 px-2 py-1 text-right outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
+                        />
+                        <span className="text-xs text-zinc-500">Bs</span>
+                      </div>
+                    )}
+                  </div>
+                )
+              )}
+            </div>
+
+            <div className="mt-3 flex gap-2">
+              <input
+                type="text"
+                value={newCat.gasto}
+                onChange={(e) => setNewCat((prev) => ({ ...prev, gasto: e.target.value }))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    addCat('gasto')
+                  }
+                }}
+                placeholder="Agregar gasto fijo"
+                className="flex-1 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
+              />
+              <input
+                type="number"
+                step="any"
+                onWheel={(e) => e.currentTarget.blur()}
+                inputMode="decimal"
+                min={0}
+                value={newAmount.gasto}
+                onChange={(e) => setNewAmount((prev) => ({ ...prev, gasto: e.target.value }))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    addCat('gasto')
+                  }
+                }}
+                placeholder="Monto (Bs)"
+                className="w-24 rounded-lg border border-zinc-300 px-2 py-1.5 text-right text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
+              />
+              <button
+                type="button"
+                onClick={() => addCat('gasto')}
+                className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                Agregar
+              </button>
+            </div>
+
+            {/* Lo que queda del monto de Gasto después de los fijos: el dinero para el día a día. */}
+            <div
+              className={`mt-4 rounded-lg px-3 py-2 text-sm ${
+                gastoCoversFixed
+                  ? 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-400'
+                  : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
+              }`}
+            >
+              {gastoCoversFixed
+                ? `Gasto: ${formatBs(gastoPillarAmount)} Bs. Fijos: ${formatBs(gastoFixedTotal)} Bs. Para el día a día te quedan ${formatBs(gastoDailyPool)} Bs (unos ${formatBs(gastoDailyPool / previewDaysRemaining)} Bs por día).`
+                : `Tus gastos fijos suman ${formatBs(gastoFixedTotal)} Bs, más que el monto de Gasto (${formatBs(gastoPillarAmount)} Bs).`}
+            </div>
+
+            <h3 className="mt-6 text-sm font-medium">Gastos del día a día</h3>
+            <p className="mt-1 text-xs text-zinc-500">
+              Estas categorías no llevan monto: solo sirven para registrar en qué gastas. Lo que
+              gastes sale del dinero para el día a día.
+            </p>
+            <div className="mt-2 flex flex-col gap-2">
+              {cats.gasto.map((cat, i) =>
+                cat.daily ? (
+                  <label key={`${cat.name}-${i}`} className="flex items-center gap-3 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={cat.checked}
+                      onChange={() => toggleCat('gasto', i)}
+                      className="h-4 w-4 shrink-0"
+                    />
+                    {cat.name}
+                  </label>
+                ) : null
+              )}
+            </div>
+            <div className="mt-3 flex gap-2">
+              <input
+                type="text"
+                value={newDaily}
+                onChange={(e) => setNewDaily(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    addDaily()
+                  }
+                }}
+                placeholder="Agregar categoría del día a día"
+                className="flex-1 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
+              />
+              <button
+                type="button"
+                onClick={addDaily}
+                className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                Agregar
+              </button>
+            </div>
+
+            {!canContinueAllocation && (
+              <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+                En total llevas asignados {formatBs(totalAllocated)} Bs, más que tu ingreso ({formatBs(incomeNumber)} Bs).
+              </p>
+            )}
+            {canContinueAllocation && (
+              <p className="mt-4 text-xs text-zinc-500">
+                Te quedan {formatBs(freeMoney)} Bs libres de tu ingreso ({formatBs(incomeNumber)} Bs).
+              </p>
+            )}
+
+            <div className="mt-8 flex gap-3">
+              <button
+                onClick={() => setStep(step - 1)}
+                className="rounded-lg border border-zinc-300 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                Atrás
+              </button>
+              <button
+                onClick={() => setStep(step + 1)}
+                disabled={!canContinueAllocation || !gastoCoversFixed}
+                className="flex-1 rounded-lg bg-zinc-900 py-2.5 font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+              >
+                Continuar
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* ---------- Pasos de Ahorro e Inversión: categorías, cada una con su monto opcional ---------- */}
+        {pillar && pillar !== 'gasto' && (
           <section>
             <h2 className="text-xl font-semibold tracking-tight">{PILLAR_LABEL[pillar]}</h2>
             <p className="mt-1 text-sm text-zinc-500">
-              Armá las categorías de {PILLAR_LABEL[pillar]}. A cada una le podés poner un monto
-              fijo en Bs, o dejarla sin monto si preferís anotar ahí lo que gastes/ahorres sin un
-              monto mensual definido todavía.
+              Arma las categorías de {PILLAR_LABEL[pillar]}. A cada una le puedes poner un monto
+              fijo en Bs, o dejarla sin monto si prefieres anotar ahí lo que ahorres o inviertas
+              sin un monto mensual definido todavía.
             </p>
 
             <div className="mt-6 flex flex-col gap-2">

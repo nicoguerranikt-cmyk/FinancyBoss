@@ -70,14 +70,21 @@ Mismo formato en los 3 pilares, en este orden fijo. Por cada pilar:
 - Botón **"Continuar"** (bloqueado solo si la suma total ya supera el ingreso — "no se puede fabricar plata de la nada"; sumar menos es válido y normal).
 - Botón **"Atrás"** vuelve al pilar anterior (o a Ingreso mensual desde Ahorro) sin perder lo ya cargado.
 
+**La pantalla de Gasto es distinta (migración 0039)**, porque en Gasto hay dos cosas diferentes y no se mezclan:
+
+- **Monto del pilar:** el usuario escribe cuánto de su ingreso se descuenta cada mes para Gasto (`pillars.monthly_amount`). Si lo deja vacío, es la suma de sus gastos fijos.
+- **Gastos fijos** (el paso se titula "Gastos fijos"): categorías **con monto** (alquiler, servicios, internet…). Salen del monto del pilar. Sus montos no pueden sumar más que el monto de Gasto.
+- **Gastos del día a día:** categorías **sin monto** (Comida, Transporte, Ocio…), solo para registrar en qué se gasta. **Nunca llevan un monto propio.**
+- **Dinero para el día a día = monto de Gasto − gastos fijos.** Lo calcula la app (no se escribe) y es lo que alimenta el presupuesto diario ("Puedes gastar hoy"). La pantalla lo muestra en vivo, con lo que equivale por día.
+
 Subcategorías sugeridas por pilar:
 
-| Ahorro | Gasto | Inversión |
-|---|---|---|
-| Fondo de emergencia | Comida | Proyecto personal |
-| Viajes | Transporte | Educación |
-| Meta específica | Vivienda | Otro |
-| Imprevistos | Gastos diarios | |
+| Ahorro | Gasto — fijos (con monto) | Gasto — día a día (sin monto) | Inversión |
+|---|---|---|---|
+| Fondo de emergencia | Alquiler | Comida | Proyecto personal |
+| Viajes | Servicios básicos | Transporte | Educación |
+| Meta específica | Internet | Ocio | Otro |
+| Imprevistos | Suscripciones | | |
 
 ---
 

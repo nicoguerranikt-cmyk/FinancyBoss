@@ -18,7 +18,10 @@ const INCOME = 3000
 // los montos de sus categorías.
 const pillars: PillarRow[] = [
   { id: 'a', name: 'ahorro', monthly_amount: 300 }, // Fondo de emergencia 300
-  { id: 'g', name: 'gasto', monthly_amount: 1300.5 }, // Alquiler 800 + Mercado 500,50
+  // Gasto: el usuario escribe 1.300,50 como monto del pilar. Alquiler (gasto fijo)
+  // 800 sale de ahí; los 500,50 restantes son el dinero para el día a día
+  // (Comida y Transporte son categorías del día a día: no llevan monto).
+  { id: 'g', name: 'gasto', monthly_amount: 1300.5 },
   { id: 'i', name: 'inversion', monthly_amount: 200 }, // Acciones 200
 ]
 
@@ -39,7 +42,8 @@ const reparto: Tx[] = [
   tx({ pillar_id: 'a', category_id: 'fondo', amount: 300, is_allocation: true }),
   tx({ pillar_id: 'i', category_id: 'acciones', amount: 200, is_allocation: true }),
   tx({ pillar_id: 'g', category_id: 'alquiler', amount: 800, is_allocation: true }),
-  tx({ pillar_id: 'g', category_id: 'mercado', amount: 500.5, is_allocation: true }),
+  // Lo que queda de Gasto después del alquiler va a la categoría "Gasto general".
+  tx({ pillar_id: 'g', category_id: 'general-g', amount: 500.5, is_allocation: true }),
 ]
 
 function saldos(transactions: Tx[], dominoEvents: { amount: number; affected: string | null }[] = []) {
@@ -50,7 +54,7 @@ function saldos(transactions: Tx[], dominoEvents: { amount: number; affected: st
       debt_id: null,
       amount: e.amount,
     })),
-    { fondo: 'a', acciones: 'i', alquiler: 'g', mercado: 'g' },
+    { fondo: 'a', acciones: 'i', alquiler: 'g', comida: 'g' },
     'a',
     'g'
   )
@@ -73,13 +77,14 @@ describe('Simulación cuenta A — del onboarding al déficit', () => {
 
   it('Paso 0 · onboarding: ingreso 3.000 → Ahorro 300, Gasto 1.300,50, Inversión 200 y 1.199,50 libres', () => {
     expect(saldos(movimientos)).toEqual({ ahorro: 300, gasto: 1300.5, inversion: 200, libreDelMes: 1199.5 })
-    expect(categoria(movimientos, 'mercado')).toBe(500.5)
+    // Dinero para el día a día = monto de Gasto − gastos fijos = 1.300,50 − 800
+    expect(1300.5 - 800).toBe(500.5)
   })
 
-  it('Paso 1 · gasto de 12,50 en Mercado → Gasto 1.288 y Mercado 488', () => {
-    movimientos.push(tx({ pillar_id: 'g', category_id: 'mercado', amount: -12.5 }))
+  it('Paso 1 · gasto de 12,50 en Comida (día a día) → Gasto 1.288 y Comida −12,50 (no tiene presupuesto)', () => {
+    movimientos.push(tx({ pillar_id: 'g', category_id: 'comida', amount: -12.5 }))
     expect(saldos(movimientos).gasto).toBe(1288)
-    expect(categoria(movimientos, 'mercado')).toBe(488)
+    expect(categoria(movimientos, 'comida')).toBe(-12.5)
   })
 
   it('Paso 2 · ingreso extra de 100 en Fondo → Ahorro 400', () => {
@@ -216,14 +221,13 @@ describe('Simulación cuenta B — ingreso insuficiente (ingreso 1.000 con pilar
     expect(Math.round(montos.reduce((s, m) => s + m, 0) * 100)).toBe(100000)
   })
 
-  it('dentro de Gasto: Alquiler 444,32 y Mercado 277,98 (suman 722,30)', () => {
+  it('dentro de Gasto: el Alquiler (800) se reduce a 722,30 y no queda nada para el día a día', () => {
     const filas = computeMonthlyAllocation(722.3, [
       { id: 'alquiler', fixedAmount: 800, isGeneral: false },
-      { id: 'mercado', fixedAmount: 500.5, isGeneral: false },
       { id: 'general', fixedAmount: null, isGeneral: true },
     ])
-    expect(filas.find((f) => f.categoryId === 'alquiler')!.amount).toBe(444.32)
-    expect(filas.find((f) => f.categoryId === 'mercado')!.amount).toBe(277.98)
+    expect(filas.find((f) => f.categoryId === 'alquiler')!.amount).toBe(722.3)
+    expect(filas.find((f) => f.categoryId === 'general')!.amount).toBe(0)
   })
 
   it('con 166,62 de Ahorro, un pago compartido de 100 deja 66,62 (y el acreedor B recibe +100)', () => {

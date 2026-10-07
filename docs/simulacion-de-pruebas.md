@@ -10,7 +10,7 @@ Los números de esta guía los comprueba el test [`lib/simulacion.test.ts`](../l
 
 ## 0. Antes de empezar
 
-- [ ] Las migraciones **0001 a 0038** están aplicadas en Supabase (sobre todo 0032 a 0038).
+- [ ] Las migraciones **0001 a 0039** están aplicadas en Supabase (sobre todo 0032 a 0039). La **0039** es la del onboarding de Gasto: sin ella el onboarding falla al terminar.
 - [ ] Borraste todos los usuarios (Authentication → Users). Comprueba con: `select count(*) from auth.users;` → `0`.
 - [ ] Tienes **dos correos** para dos cuentas: **A** (la principal) y **B** (para las deudas vinculadas y el ingreso insuficiente).
 - [ ] La app corre (`npm run dev`) o está desplegada, apuntando a ese Supabase.
@@ -31,12 +31,16 @@ Los números de esta guía los comprueba el test [`lib/simulacion.test.ts`](../l
 | 1.3 | Cierra sesión e inicia sesión con una contraseña **incorrecta** | Mensaje "Email o contraseña incorrectos" (sin decir cuál falló) |
 | 1.4 | Inicia sesión bien | Te lleva al **onboarding** |
 | 1.5 | Ingreso **3000**, "repetir cada mes" **activado** | Puedes continuar |
-| 1.6 | **Ahorro:** categoría `Fondo de emergencia` con monto **300** | — |
-| 1.7 | **Gasto:** `Alquiler` **800**, `Mercado` **500,50**, `Transporte` **sin monto** | Escribe `500,50` (con centavos): no se redondea |
-| 1.8 | **Inversión:** `Acciones` **200** | Resumen: total asignado **1.800,50**, libre **1.199,50** |
-| 1.9 | Termina el onboarding | Llegas al Dashboard |
+| 1.6 | **Ahorro:** marca `Fondo de emergencia` y ponle monto **300** (desmarca las demás) | — |
+| 1.7 | **Gastos fijos** (el paso de Gasto): en "¿Cuánto de tu ingreso va a Gasto cada mes?" escribe **1300,50** | Escribe con centavos: no se redondea |
+| 1.8 | En "Tus gastos fijos" marca `Alquiler` con **800** (desmarca los demás) | Debe decir: Gasto 1.300,50 · Fijos 800 · **para el día a día te quedan 500,50 Bs** |
+| 1.9 | En "Gastos del día a día" marca `Comida` y `Transporte` (**no tienen campo de monto**) | No hay ningún campo de monto en esa lista |
+| 1.10 | **Inversión:** marca una categoría `Acciones` y ponle **200** | Resumen: total asignado **1.800,50**, libre **1.199,50** |
+| 1.11 | Termina el onboarding | Llegas al Dashboard |
 
-**Qué debe mostrar el Dashboard (paso 1.9):**
+> Prueba extra del paso 1.8: pon un gasto fijo mayor que el monto de Gasto (por ejemplo 2000). El botón **Continuar** debe quedar bloqueado con el aviso "tus gastos fijos suman… más que el monto de Gasto".
+
+**Qué debe mostrar el Dashboard (paso 1.11):**
 
 | Dato | Valor |
 |---|---|
@@ -45,7 +49,7 @@ Los números de esta guía los comprueba el test [`lib/simulacion.test.ts`](../l
 | Inversión | 200 |
 | Dinero libre | 1.199,50 |
 
-**Mi Dinero:** Fondo 300 · Alquiler 800 · Mercado 500,50 · Acciones 200.
+**Mi Dinero:** Fondo 300 · Gastos fijos: Alquiler 800 · Gastos variables (día a día): Comida y Transporte, sin presupuesto, más los 500,50 de "Gasto general" · Acciones 200.
 **Más → Configuración:** el selector de **Zona horaria** muestra la de tu dispositivo.
 
 ---
@@ -57,7 +61,7 @@ Haz los pasos **en orden**. Cada fila dice cómo queda la cuenta después.
 | # | Acción | Ahorro | Gasto | Inversión | Dinero libre |
 |---|---|---|---|---|---|
 | 2.0 | (punto de partida) | 300 | 1.300,50 | 200 | 1.199,50 |
-| 2.1 | **Gasto** de **12,50** en Mercado | 300 | **1.288** | 200 | 1.199,50 |
+| 2.1 | **Gasto** de **12,50** en **Comida** | 300 | **1.288** | 200 | 1.199,50 |
 | 2.2 | **Ingreso extra** de **100** en Ahorro → Fondo | **400** | 1.288 | 200 | 1.199,50 |
 | 2.3 | **Asignar 200 de Dinero libre** a Inversión → Acciones | 400 | 1.288 | **400** | **999,50** |
 | 2.4 | **Ahorro en USD:** depositar **50 USD**; convertir **20 USD = 140 Bs** a Fondo | **540** | 1.288 | 400 | 999,50 |
@@ -65,7 +69,7 @@ Haz los pasos **en orden**. Cada fila dice cómo queda la cuenta después.
 
 Comprobaciones extra:
 
-- [ ] 2.1: el gasto de `12,50` aparece como **12,50**, no como 13. Mercado queda en **488**.
+- [ ] 2.1: el gasto de `12,50` aparece como **12,50**, no como 13. Comida no tiene presupuesto: su acumulado es **−12,50**.
 - [ ] 2.4: el saldo en USD es **30 USD**.
 - [ ] 2.5: Alquiler muestra asignado **850**.
 - [ ] 2.3, 2.4 y 2.5 (traslados): en **Estadísticas** el "Ingreso total" **no sube** por ellos.
@@ -115,14 +119,14 @@ Estado antes: Ahorro 219,50 · Gasto 538.
 **Estadísticas del mes (cuenta A):**
 
 - [ ] **Ingreso total: 3.180** (3.000 + bono 100 + cobro 80). Los traslados 200, 140 y 50 **no** cuentan.
-- [ ] Alquiler, Mercado, Transporte y la deuda aparecen como gastos; el "−50" del traslado a Alquiler **no** aparece como gasto de Ahorro.
+- [ ] Alquiler, Comida, Transporte y la deuda aparecen como gastos; el "−50" del traslado a Alquiler **no** aparece como gasto de Ahorro.
 - [ ] El progreso de deudas muestra `Préstamo` con 350,50 pagados y 249,50 pendientes; deudores muestra `Juan` con 80 cobrados y 120 pendientes.
 
 ---
 
 ## 5. Cuenta B — ingreso insuficiente
 
-Crea la cuenta B con las **mismas categorías** que la A (Fondo 300, Alquiler 800, Mercado 500,50, Transporte sin monto, Acciones 200), pero en el onboarding **desactiva "repetir cada mes"**.
+Crea la cuenta B con **lo mismo** que la A (Fondo 300, Gasto 1300,50 con Alquiler 800, Comida y Transporte del día a día, Acciones 200), pero en el onboarding **desactiva "repetir cada mes"**.
 
 | # | Acción | Debe pasar |
 |---|---|---|
@@ -136,7 +140,7 @@ Crea la cuenta B con las **mismas categorías** que la A (Fondo 300, Alquiler 80
 | Pilar | Debe mostrar |
 |---|---|
 | Ahorro | 166,62 (Fondo 166,62) |
-| Gasto | **722,30** (Alquiler **444,32** + Mercado **277,98**) |
+| Gasto | **722,30** (el Alquiler se reduce a **722,30** y no queda nada para el día a día) |
 | Inversión | 111,08 (Acciones 111,08) |
 | Suma | **1.000** exacto (sin centavos perdidos) |
 
