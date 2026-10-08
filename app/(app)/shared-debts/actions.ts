@@ -10,7 +10,7 @@ import { createClient } from '@/lib/supabase/server'
 import { todayIn } from '@/lib/dashboard'
 import { getUserTimeZone } from '@/lib/userTimezone.server'
 import { validateAutoPayFrequency, type AutoPayFrequencyInput } from '@/lib/debts'
-import { EPSILON } from '@/lib/domino'
+import { EPSILON } from '@/lib/money'
 import { validatePillarSource } from '@/lib/pillarSource'
 
 function revalidateShared() {

@@ -7,7 +7,7 @@
 1. Autenticación y Onboarding
 2. Pilares y Subcategorías
 3. Ingresos
-4. Efecto Dominó
+4. Gastos fijos y gastos del día a día
 5. Presupuesto Diario Disponible
 6. Deudas
 7. Deudores
@@ -70,17 +70,16 @@ Mismo formato en los 3 pilares, en este orden fijo. Por cada pilar:
 - Botón **"Continuar"** (bloqueado solo si la suma total ya supera el ingreso — "no se puede fabricar plata de la nada"; sumar menos es válido y normal).
 - Botón **"Atrás"** vuelve al pilar anterior (o a Ingreso mensual desde Ahorro) sin perder lo ya cargado.
 
-**Gasto se divide en dos pantallas (migraciones 0039 y 0040)**, porque en Gasto hay dos cosas diferentes y no se mezclan:
+**Gasto se divide en dos pantallas (migraciones 0039 a 0041)**, porque en Gasto hay dos cosas diferentes y no se mezclan:
 
 *Pantalla "Gastos fijos":*
 - Explica que aquí van los gastos que se pagan todos los meses (alquiler, suscripciones, servicios, internet…) y que el monto de cada uno se descuenta del ingreso.
-- **Monto del pilar:** el usuario escribe cuánto de su ingreso se descuenta cada mes para Gasto (`pillars.monthly_amount`). Si lo deja vacío, es la suma de sus gastos fijos.
-- **Gastos fijos:** categorías **con monto**. Salen del monto del pilar y no pueden sumar más que él (si lo superan, "Continuar" se bloquea).
-- **Fecha de cobro (opcional)** por gasto fijo: si la pone, la categoría queda programada cada mes desde esa fecha (`auto_repeat`, frecuencia de 1 mes). Al llegar la fecha la app avisa y el usuario confirma con "Ya lo pagué": nunca se descuenta sola. Queda "recién cuando llega la fecha" (`fixed_reserve_ahead = false`): el presupuesto diario no baja hasta que toca la cuota. Se puede cambiar después en la categoría.
+- **Gastos fijos:** categorías **con monto**. El **monto del pilar Gasto es la suma de ellos** (`pillars.monthly_amount`): no se pide aparte.
+- **Fecha de cobro (opcional)** por gasto fijo: si la pone, la categoría queda programada cada mes desde esa fecha (`auto_repeat`, frecuencia de 1 mes). Al llegar la fecha la app avisa y el usuario confirma con "Ya lo pagué": nunca se descuenta sola.
 
 *Pantalla "Gastos del día a día":*
-- Explica que son los gastos que no son fijos (comida, transporte, salidas…) y que aquí **solo se crean categorías**, para ordenar lo que se gasta cada día. **Nunca llevan un monto propio.**
-- **Dinero para el día a día = monto de Gasto − gastos fijos.** Lo calcula la app (no se escribe) y es lo que alimenta el presupuesto diario ("Puedes gastar hoy"). La pantalla lo muestra, con lo que equivale por día.
+- Explica que son los gastos que no son fijos (comida, transporte, salidas…) y que aquí **solo se crean categorías**, para ordenar lo que se gasta cada día. **No llevan monto ni presupuesto.**
+- Explica que cada vez que se gasta algo se registra en una de estas categorías y se **elige de dónde sale la plata: Dinero libre o ahorros** (§4.3).
 
 Subcategorías sugeridas por pilar:
 
@@ -163,7 +162,7 @@ Primer paso hacia multi-moneda, a propósito acotado: **no** es un pilar nuevo n
 - **Convertir a Bs**: el usuario dice cuántos USD saca y a cuántos Bs equivalen **hoy** — el tipo de cambio es siempre manual, nunca automático (en Bolivia varía día a día y no hay una fuente única confiable). Elige a qué categoría de Ahorro va esa plata ya convertida.
 - La conversión no puede superar lo que hay en el pozo ("no se puede fabricar plata de la nada", mismo criterio que el resto del proyecto).
 - Las dos escrituras de una conversión (restar del pozo en USD, sumar el ingreso en Bs a la categoría) son **atómicas**: corren dentro de una función de Postgres (`convert_usd_savings_to_bs`), mismo criterio que `confirm_shared_payment` — quedan las dos filas o ninguna, nunca a medias.
-- No afecta el resto de la app: pilares, presupuesto diario, efecto dominó, todo sigue igual.
+- No afecta el resto de la app: pilares y presupuesto diario siguen igual.
 
 ### 2.7 Monto mensual vs. monto ya acumulado (Ahorro/Inversión)
 
@@ -270,107 +269,78 @@ movimiento.
     en la categoría) son atómicas (`allocate_free_money_to_category`), y no
     se puede asignar más de lo que el total disponible permite (acreditado +
     lo que sobra del mes en curso).
-  - El acceso rápido del Dashboard (`QuickAddForm`) tiene "Dinero libre" como
-    destino elegible, tanto en "Gasto" ("Sale de: Gasto / Dinero libre") como
-    en "Ingreso extra" (junto a los 3 pilares) — un movimiento cargado ahí
-    contra Dinero libre va directo a `free_money_transactions` (no a
-    `transactions`), así que aparece en el mismo historial que
-    `/mi-dinero/libre`, sin importar desde qué pantalla se cargó. No pasa por
-    el efecto dominó (eso solo aplica a pilares/categorías reales).
+  - El acceso rápido del Dashboard (`QuickAddForm`) usa Dinero libre de dos
+    formas: en "Gasto", como el origen por defecto de un gasto del día a día
+    ("Sale de: Dinero libre / Ahorro", §4.3), y en "Ingreso extra" como destino
+    (junto a Ahorro e Inversión). Un ingreso cargado ahí contra Dinero libre va
+    directo a `free_money_transactions` (no a `transactions`), así que aparece
+    en el mismo historial que `/mi-dinero/libre`, sin importar desde qué
+    pantalla se cargó.
 
 ---
 
-## 4. Efecto Dominó
+## 4. Gastos fijos y gastos del día a día
 
 ### 4.0 Principio fundamental: toda la plata está trackeada
 
-FinancyBoss es contabilidad real, no un presupuesto aproximado. **La plata nunca aparece ni desaparece por arte de magia.** Si el usuario gasta dinero que no tenía disponible, ese dinero salió de algún lado concreto y el sistema debe registrar de dónde.
+FinancyBoss es contabilidad real, no un presupuesto aproximado. **La plata nunca aparece ni desaparece por arte de magia.** Cada gasto sale de algún lado concreto y el sistema registra de dónde.
 
-Corolario: el sistema **nunca mueve dinero entre categorías por su cuenta**. O el movimiento es consecuencia matemática de la plata que el usuario ya tenía, o el usuario declara explícitamente el origen.
+Corolario: el sistema **nunca mueve dinero entre categorías por su cuenta**. O el movimiento es consecuencia matemática de la plata que el usuario ya tenía, o el usuario declara explícitamente el origen. Y si el origen elegido no tiene suficiente, el gasto se rechaza: no se puede gastar plata que no existe.
 
-### 4.1 Los tres niveles de dinero
+### 4.1 Cómo se reparte el ingreso
 
 ```
 Ingreso total
-  − Ahorro (monto fijo en Bs)     ← comprometido, no se toca
-  − Inversión (monto fijo en Bs)  ← comprometido, no se toca
-  − Gastos fijos "reservados"     ← comprometido (ver sección 4.2)
-= Plata discrecional del mes
-  ÷ Días restantes
-= Presupuesto diario disponible
+  − Ahorro (monto fijo en Bs)      ← comprometido
+  − Gasto = tus gastos fijos       ← comprometido (alquiler, servicios, suscripciones…)
+  − Inversión (monto fijo en Bs)   ← comprometido
+= Dinero libre
+  ÷ Días restantes del mes
+= Presupuesto diario ("Puedes gastar hoy")
 ```
 
-### 4.2 Gastos fijos vs. gastos variables
+El **pilar Gasto son solo los gastos fijos**: su monto es la suma de ellos. Los gastos del día a día **no tienen presupuesto propio** (ver §4.3): salen de Dinero libre o de Ahorro.
 
-Cada subcategoría del pilar Gasto es de uno de estos dos tipos:
+### 4.2 Gastos fijos
 
-| Tipo | Cómo se define | Efecto en el presupuesto diario |
-|---|---|---|
-| **Fijo** | Tiene un monto asignado (ej. Vivienda 800 Bs, Internet 100 Bs, Mercado 500 Bs) + una fecha de inicio y una frecuencia ("cada N días/meses"). Recibe ese monto tal cual en el reparto mensual | Configurable por categoría (ver abajo) |
-| **Variable** | Sin monto fijo asignado (ej. Comida, Transporte, Ocio) — sale directo del saldo general de Gasto | Sale del pool discrecional que **sí alimenta** el presupuesto diario |
+Una categoría del pilar Gasto **con monto** es un gasto fijo (ej. Alquiler 800 Bs, Internet 100 Bs). Recibe ese monto tal cual en el reparto mensual.
+
+**Fecha de cobro y frecuencia:** al configurar un gasto fijo (en el onboarding o después, en la categoría) el usuario puede elegir la fecha de la primera cuota (con un calendario real) y cada cuántos días o meses se repite. Si no la configura, lo registra manualmente cuando efectivamente lo paga.
+
+**Es un recordatorio, nunca un descuento silencioso:** cuando llega la fecha de un gasto fijo programado, la app NO le mete solo la transacción — mismo criterio que el plan de pago automático de Deudas ("no asumir movimientos de plata"). El Dashboard avisa *"Tienes N gastos fijos pendientes de confirmar"* (link a Gastos fijos), la categoría se marca "Pendiente de confirmar" en la lista, y recién cuando el usuario entra y toca **"Ya lo pagué"** (`confirmFixedExpense`, `app/(app)/mi-dinero/actions.ts`) se registra el gasto de verdad, fechado en la fecha real del vencimiento. Tocar el botón dos veces, o recargar la página, no duplica el registro: si ya hay un gasto de esa categoría en o después de esa fecha, no deja confirmar de nuevo. Un reparto o un ingreso posterior al vencimiento **no** cuenta como pago.
 
 **Sin %, en ningún lado de Mi Dinero** (pedido del usuario): ni en los pilares, ni en las categorías, ni siquiera como dato informativo — todo se ve en Bs. La app internamente calcula proporciones (ej. para escalar montos si el ingreso no alcanza, ver §2.1), pero no las muestra en pantalla.
 
-**Frecuencia flexible:** al activar "descontar automáticamente" en un gasto fijo, el usuario elige la fecha de la primera cuota (con un calendario real) y cada cuántos días o meses se repite — ya no es siempre "una vez al mes, el día 1". Si no está activo, el usuario lo registra manualmente cuando efectivamente lo paga.
-
-**Reservar desde ya vs. recién cuando toca (configurable por categoría):** cada gasto fijo con descuento automático elige uno de estos dos comportamientos:
-- **Reservar desde ya:** el presupuesto diario ya descuenta este gasto (prorrateado según su frecuencia) aunque la fecha real de la cuota todavía no haya llegado — es la plata comprometida que describe la sección 4.1. Evita enterarse tarde de que esa plata ya no es disponible.
-- **Recién cuando toca:** el presupuesto diario se mantiene alto hasta el día exacto configurado, y ahí baja (al confirmarse el pago, no antes — ver el recordatorio de abajo).
-
-**Es un recordatorio, nunca un descuento silencioso:** cuando llega la fecha de un gasto fijo con descuento automático, la app NO le mete solo la transacción — mismo criterio que el plan de pago automático de Deudas ("no asumir movimientos de plata"). El Dashboard avisa *"Tienes N gastos fijos pendientes de confirmar"* (link a Gastos fijos), la categoría se marca "Pendiente de confirmar" en la lista, y recién cuando el usuario entra y toca **"Ya lo pagué"** (`confirmFixedExpense`, `app/(app)/mi-dinero/actions.ts`) se registra el gasto de verdad, fechado en la fecha real del vencimiento. Tocar el botón dos veces, o recargar la página, no duplica el registro (mismo chequeo de idempotencia que `confirmAutoPayment` de Deudas: si ya hay una transacción en o después de esa fecha, no deja confirmar de nuevo).
-
-**Nota de diseño:** esta distinción resuelve la ambigüedad de categorías como "Comida", que puede significar el mercado mensual (fijo, monto conocido) o salir a comer (variable). Se resuelven con nombres distintos: **Mercado** (fijo) y **Comida** (variable).
-
-**Dos pantallas separadas:** dentro de Mi Dinero → Gasto, "Gastos fijos" y "Gastos variables" (nombre visible al usuario — la ruta interna sigue siendo `/cotidianos`, solo cambió el texto) tienen cada una su propio dashboard y su propio total acumulado, en vez de mezclarse en una sola lista larga. Una categoría se puede crear de dos formas: desde "Gastos variables" (nace variable, sin monto) o directo desde "Gastos fijos" con su monto puesto desde el arranque (sin tener que pasar primero por Configuración para "promoverla").
-
-**Un gasto fijo que un mes puntual sale más caro** (ej. Internet, siempre 100 Bs, este mes te llegó 150 Bs): no se toca el monto fijo (que sigue siendo 100 Bs los meses siguientes) — en la pantalla de esa categoría hay un control **"Aumentar presupuesto este mes"** (`bumpFixedExpenseThisMonth`, en `app/(app)/mi-dinero/actions.ts`) que le suma esos 50 Bs de más solo a este mes. Es la única vía para meterle más presupuesto a una categoría de Gasto — no existe una alternativa genérica de "ingreso extra a Gasto" (ver §5.4).
+**Un gasto fijo que un mes puntual sale más caro** (ej. Internet, siempre 100 Bs, este mes te llegó 150 Bs): no se toca el monto fijo (que sigue siendo 100 Bs los meses siguientes) — en la pantalla de esa categoría hay un control **"Aumentar presupuesto este mes"** (`bumpFixedExpenseThisMonth`, en `app/(app)/mi-dinero/actions.ts`) que le suma esos 50 Bs de más solo a este mes. Es la única vía para meterle más plata a una categoría de Gasto — Gasto nunca recibe un "ingreso extra" (ver §5.4).
 
 **Migración 0031 — la plata tiene que salir de algún lado real:** esos 50 Bs de más no se fabrican solos, el usuario elige explícitamente la fuente:
-- **Disponible general (Dinero libre)**: reutiliza `allocate_free_money_to_category` (migración 0028) — ya acepta Gasto como destino.
-- **Un ahorro puntual**: el usuario elige qué categoría de Ahorro (se le muestra su saldo disponible); `fund_fixed_expense_from_savings` valida que tenga suficiente y debita esa categoría atómicamente junto con el crédito a Gasto — las dos escrituras quedan las dos o ninguna, mismo criterio que `confirm_shared_payment`/`convert_usd_savings_to_bs`.
+- **Dinero libre**: reutiliza `allocate_free_money_to_category` (migración 0028) — ya acepta Gasto como destino.
+- **Un ahorro puntual**: el usuario elige qué categoría de Ahorro (se le muestra su saldo disponible); `fund_fixed_expense_from_savings` valida que tenga suficiente y debita esa categoría atómicamente junto con el crédito a Gasto — las dos escrituras quedan las dos o ninguna.
 
 **Modalidad y estado de un gasto fijo (pantalla de la categoría, pestaña Consulta):** no es una columna nueva — se deriva de `auto_repeat` (si ya tiene fecha/frecuencia configuradas):
-- **Pago único mensual** (`auto_repeat = true`, ej. gimnasio, alquiler): estado **Programado** (todavía no llega la fecha este mes), **Pendiente de confirmar** (llegó la fecha, ver el recordatorio de arriba) o **Pagado**.
-- **Consumo gradual** (`auto_repeat = false`, ej. mercado, que se gasta de a poco en el mes): estado **Disponible** o **Presupuesto agotado** (restante de este mes en 0 o menos).
+- **Pago único mensual** (`auto_repeat = true`, ej. alquiler, gimnasio): estado **Programado** (todavía no llega la fecha este mes), **Pendiente de confirmar** (llegó la fecha) o **Pagado**.
+- **Consumo gradual** (`auto_repeat = false`): estado **Disponible** o **Presupuesto agotado** (restante de este mes en 0 o menos).
 
-En ambos casos se muestran 3 números de **este mes** (no el acumulado histórico de arriba, que es de todos los tiempos): **Asignado** (el monto fijo + lo que se haya aumentado este mes puntual), **Usado** (suma de los gastos reales registrados este mes) y **Restante** (la resta de los dos anteriores).
+En ambos casos se muestran 3 números de **este mes** (no el acumulado histórico): **Asignado** (el monto fijo + lo que se haya aumentado este mes puntual), **Usado** (suma de los gastos reales registrados este mes) y **Restante** (la resta de los dos anteriores).
 
-### 4.3 Comportamiento cuando el usuario se excede
+### 4.3 Gastos del día a día
 
-**Caso 1 — Se pasa del límite diario pero hay margen en el mes:**
+Son los gastos que **no** son fijos: comida, transporte, salidas…
 
-No se pregunta nada. La plata sigue siendo del mismo pozo discrecional del usuario, así que está trackeada. El sistema:
-- Recalcula el presupuesto diario para los días restantes (reajuste proporcional automático).
-- Muestra un aviso informativo: *"Te pasaste 200 Bs hoy. Tu presupuesto diario baja de 231 a 191 Bs."*
-- Ofrece un botón opcional **"Cubrir con Ahorro"** por si el usuario prefiere mantener su ritmo diario en vez de apretarse el resto del mes. Es opcional, se puede ignorar.
+- Son **categorías del pilar Gasto sin monto**. Sirven solo para registrar en qué se gasta: **no llevan monto ni presupuesto**.
+- **No bajan el saldo de Gasto** (que son solo los gastos fijos).
+- Al registrar uno (acceso rápido del Dashboard) el usuario elige **de dónde sale la plata**:
+  - **Dinero libre** (por defecto), o
+  - **una categoría de Ahorro** (el usuario ve así exactamente qué meta está sacrificando).
+- Si el origen elegido **no tiene suficiente**, el gasto se rechaza con un aviso (*"Solo tienes 30 Bs de Dinero libre disponibles"*) y no se guarda nada; el usuario puede elegir otro origen.
+- Se guarda todo junto, atómicamente (`register_daily_expense`, migración 0041): el gasto en su categoría y la baja del origen quedan los dos o ninguno, y dos gastos simultáneos no usan el mismo saldo.
+- Se puede registrar sin categoría.
 
-**Caso 2 — El discrecional del mes llegó a cero y el usuario sigue gastando:**
+**Dos pantallas separadas:** dentro de Mi Dinero → Gasto, "Gastos fijos" y "Gastos del día a día" (la ruta interna de esta última sigue siendo `/cotidianos`) tienen cada una su propio total. En "Gastos del día a día" se ve lo **gastado** (no hay presupuesto). Una categoría del día a día nace sin monto; un gasto fijo se crea desde "Gastos fijos" con su monto y su fecha de cobro.
 
-Acá sí hay plata que no existía. El sistema **debe preguntar** de dónde salió:
+### 4.4 Cuándo se calcula
 
-> **Te faltan 200 Bs. ¿De dónde salieron?**
-> - Del presupuesto de los próximos días *(reajusta el diario hacia abajo)*
-> - De Ahorro → el usuario elige qué subcategoría
-> - De Inversión → el usuario elige cuál
-> - Alguien me lo prestó *(crea una deuda)*
-> - Ingreso extra que no registré *(pide registrarlo)*
-
-Antes de guardar la elección de Ahorro/Inversión, el servidor valida que ese pilar realmente tenga esa plata este mes (`computePillarSaldoThisMonth` en `app/(app)/actions.ts`, mismo cálculo que `computeDashboard` — no alcanza con sumar las transacciones de una categoría puntual, porque un `domino_events` anterior ya puede haber debitado el pilar entero sin dejar fila en `transactions`). Si no alcanza, se lo dice y no guarda nada — mismo criterio que el resto de los flujos de dinero de la app.
-
-El usuario elige, el sistema descuenta del origen declarado, y queda registrado en `domino_events` con el origen real.
-
-### 4.4 Reajuste proporcional (funciona en ambas direcciones)
-
-- Si el usuario **gasta de más** un día → el presupuesto de los días restantes baja.
-- Si el usuario **gasta de menos** o no gasta → el sobrante se redistribuye entre los días restantes y el presupuesto diario sube.
-
-Esto es automático y no requiere intervención del usuario.
-
-### 4.5 Cuándo se calcula y cuándo se notifica
-
-- **Cálculo: tiempo real.** Apenas se registra cualquier movimiento, todos los saldos se actualizan al instante.
-- **Aviso inmediato:** confirmación del movimiento y su impacto en el presupuesto diario (ver 4.3, caso 1).
-- **Notificación formal: resumen diario nocturno.** Una vez por día el usuario recibe el resumen consolidado de lo que pasó.
+**Tiempo real.** Apenas se registra cualquier movimiento, todos los saldos y el presupuesto diario se actualizan al instante.
 
 ---
 
@@ -382,35 +352,30 @@ Un número concreto que el usuario ve en el dashboard todos los días: cuánto p
 ### 5.2 Cómo se calcula
 
 ```
-Pilar Gasto del mes (+ acumulado del mes anterior)
-  − Gastos fijos "reservar desde ya" (prorrateado)   ← plata comprometida
-  − Gastos ya registrados (fijos "recién cuando toca" + variables)
-= Plata discrecional restante
+Dinero libre disponible ahora
   ÷ Días restantes del mes (incluyendo hoy)
-= Presupuesto diario disponible hoy
+= Puedes gastar hoy
 ```
 
-**Importante:** solo los gastos fijos marcados "reservar desde ya" quedan afuera del cálculo diario desde el día 1 del mes (aunque su transacción real todavía no exista) — es la configuración por defecto y la recomendada, para no aparecer con más plata "disponible" de la real. Un gasto fijo marcado "recién cuando toca" sí entra al presupuesto diario como cualquier gasto, pero solo una vez que el usuario confirma su pago con "Ya lo pagué" (ver §4.2) — nunca antes de esa fecha, ni solo por haber llegado el día.
+El Dinero libre es lo acreditado de meses cerrados y de movimientos a mano, **más** lo que sobra de este mes (ingreso − Ahorro − gastos fijos − Inversión). Los gastos del día a día que salen de Dinero libre lo bajan; los que salen de Ahorro **no** lo tocan.
 
 **Ejemplo concreto:**
-- Pilar Gasto del mes: 2.000 Bs
-- Ya gastaste 800 Bs en los primeros 10 días
-- Te quedan 1.200 Bs para 20 días restantes
-- **Presupuesto diario hoy: 60 Bs**
+- Ingreso 3.000 Bs · Ahorro 300 · gastos fijos 800 · Inversión 200 → Dinero libre 1.700 Bs
+- Hoy es 8 de octubre: quedan 24 días (contando hoy)
+- **Puedes gastar hoy: 70,83 Bs**
 
 ### 5.3 Comportamiento dinámico
 
-- Si hoy gastás más de tu límite diario → mañana el límite baja (se distribuye el exceso entre los días restantes).
-- Si hoy gastás menos → mañana el límite sube (el sobrante se reparte entre los días restantes).
-- El número se recalcula automáticamente en tiempo real cada vez que se registra un gasto.
+- Si hoy gastas más de tu límite diario de Dinero libre → mañana el límite baja (el exceso se reparte entre los días restantes).
+- Si hoy gastas menos → mañana el límite sube.
+- Se recalcula en tiempo real cada vez que se registra un gasto.
+- Con Dinero libre en 0 o negativo muestra 0 Bs con el aviso *"Ya no te queda Dinero libre este mes"*.
 
 ### 5.4 Qué incluye y qué no
 
-- Se calcula **exclusivamente sobre el pilar Gasto**.
-- Ahorro e Inversión no entran en el cálculo — son intocables para el gasto cotidiano.
-- Los gastos fijos (arriendo, servicios) afectan el cálculo diario: desde ya si están marcados "reservar desde ya", o recién cuando se registra su transacción si no (ver 4.2/5.2).
-- **Gasto nunca recibe un "ingreso extra"** (`QuickAddForm`, tab Dashboard): el pilar solo registra gastos, así que no aparece como destino elegible ahí — a diferencia de Ahorro, Inversión y Dinero libre, que sí pueden recibir ingresos. Si necesitás más presupuesto para un gasto fijo puntual, se configura directo en esa categoría (ver §4.2, "Aumentar presupuesto este mes"), no por acá.
-  - **Única excepción**, acotada y guardada aparte (no aparece en el combo de pilares): dentro del Caso 2 del efecto dominó (§4.3), "Ingreso extra que no registré" — ahí la plata que cerró el déficit de verdad entró a Gasto, así que se registra directo contra Gasto sin pasar por el selector genérico.
+- Se calcula **exclusivamente sobre el Dinero libre**.
+- Ahorro, Gasto (gastos fijos) e Inversión no entran en el cálculo. Un gasto del día a día pagado con Ahorro no cambia "Puedes gastar hoy".
+- **Gasto nunca recibe un "ingreso extra"** (`QuickAddForm`, tab Dashboard): son solo los gastos fijos, así que no aparece como destino elegible ahí (el servidor también lo rechaza) — a diferencia de Ahorro, Inversión y Dinero libre, que sí pueden recibir ingresos. Si necesitas más plata para un gasto fijo puntual, se configura directo en esa categoría (ver §4.2, "Aumentar presupuesto este mes").
 
 ### 5.5 Dónde se muestra
 En el dashboard principal, como el número más prominente de la pantalla. El usuario no tiene que ir a buscarlo — es lo primero que ve al abrir la app.
@@ -575,7 +540,6 @@ Primer uso de archivos en el proyecto (hasta acá todo era filas en tablas) — 
 | Ingreso total del mes | Base + ingresos extra **reales** (un bono, el cobro de un deudor, el pago que recibes de una deuda vinculada, la ganancia de una inversión, un "Ingreso" a Dinero libre). **No** cuentan los traslados entre tus propias cuentas (asignar Dinero libre a una categoría, aumentar un gasto fijo desde Ahorro, convertir USD a Bs), ni los saldos iniciales ("Ahorro previo"/"Inversión previa"), ni el reparto mensual, ni el "Sobrante del mes". Mover plata propia nunca es ingreso nuevo ni gasto |
 | Por pilar | Presupuesto asignado vs. gasto real, superávit o déficit |
 | Por subcategoría | Mismo desglose que por pilar |
-| Efecto dominó | Número de veces activado ese mes y categorías más afectadas |
 | Progreso de deudas | Monto pendiente y pagos registrados por deuda (locales y vinculadas). Una deuda archivada igual aparece en el mes en que recibió pagos |
 | Deudores activos ese mes | Cobros recibidos y pendientes (locales y vinculadas) |
 | Saldo acumulado | Lo que pasó al mes siguiente por pilar |
@@ -663,7 +627,7 @@ description  → texto libre opcional
 date         → fecha del registro
 debt_id      → referencia a debts, opcional (pago de deuda con fuente pilar/categoría específica)
 debtor_id    → referencia a debtors, opcional (cobro de un deudor registrado como ingreso extra)
-kind         → "transfer" | "opening_balance" | null (migración 0037). transfer = un lado de un traslado entre cuentas propias; opening_balance = saldo inicial; null = ingreso o gasto real. Estadísticas excluye los que tienen kind
+kind         → "transfer" | "opening_balance" | "daily_spend" | "funding" | null (migraciones 0037 y 0041). transfer = un lado de un traslado entre cuentas propias; opening_balance = saldo inicial; daily_spend = gasto del día a día en su categoría de Gasto (gasto real, pero no baja el saldo del pilar Gasto); funding = el lado del origen de un gasto del día a día (baja Ahorro, no es un gasto aparte); null = ingreso o gasto real. Estadísticas excluye transfer, opening_balance y funding
 transfer_id  → UUID, opcional. El mismo en los dos lados de un traslado, para vincularlos (también existe en free_money_transactions y usd_savings_transactions)
 created_at   → timestamp
 ```
@@ -714,17 +678,6 @@ income_amount   → número o null. Ingreso base con el que se cerró el mes (mi
 created_at      → timestamp
 ```
 
-**`domino_events`** — registro de cada activación del efecto dominó
-```
-id                   → UUID
-user_id              → referencia a auth.users
-transaction_id       → referencia a transactions
-source_category_id   → categoría que se excedió
-affected_category_id → categoría que absorbió el exceso
-amount               → cuánto se transfirió
-created_at           → timestamp
-```
-
 ### Relaciones
 
 ```
@@ -736,7 +689,6 @@ auth.users (Supabase)
               └── monthly_budgets (1 a muchos)
   └── debts           (1 a muchos)
   └── debtors         (1 a muchos)
-  └── domino_events   (1 a muchos)
 ```
 
 ---
@@ -757,8 +709,9 @@ auth.users (Supabase)
 | El usuario quiere editar un mes ya cerrado | No se puede. El historial es de solo lectura. |
 | Un deudor paga más de lo que debe | El sistema no acepta un pago mayor al saldo pendiente. Muestra error. |
 | El usuario borra un deudor con pagos parciales registrados | Se conserva el historial de pagos recibidos como ingresos extra. El registro del deudor se archiva, no se borra. |
-| El presupuesto diario disponible es 0 o negativo | Se muestra 0 Bs disponibles hoy con alerta visible de déficit. No se bloquea el registro de gastos. |
-| El usuario no tiene subcategorías en un pilar | El saldo del pilar queda como "libre" y el presupuesto diario se calcula sobre el total del pilar Gasto igualmente. |
+| El presupuesto diario disponible es 0 | Se muestra 0 Bs con el aviso "Ya no te queda Dinero libre este mes". Un gasto del día a día que salga de Dinero libre se rechaza (no hay plata); puede elegir Ahorro como origen. |
+| El usuario no tiene subcategorías en un pilar | El saldo del pilar queda como "libre" dentro de ese pilar. |
+| El usuario no tiene categorías del día a día | Puede registrar sus gastos del día a día sin categoría. |
 
 ---
 

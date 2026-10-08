@@ -1,6 +1,6 @@
 // Lógica de Deudas (manual.md §6, modelo v2: un pago real reduce el saldo,
 // crear la deuda no toca nada). Sin imports de Supabase a propósito, mismo
-// criterio que lib/dashboard.ts y lib/domino.ts.
+// criterio que lib/dashboard.ts.
 
 import {
   lastDueOccurrence as lastRecurrenceOccurrence,

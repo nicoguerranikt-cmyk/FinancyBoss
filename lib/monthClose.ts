@@ -16,14 +16,11 @@ import {
   daysInMonth,
   dateIn,
   monthRangeFor,
-  monthRangeUtcInstantFor,
   resolveTimeZone,
   todayIn,
   type PillarRow,
   type TransactionRow,
 } from '@/lib/dashboard'
-import { computeDominoPillarAdjustments } from '@/lib/domino'
-import { isFixedExpenseScheduled, monthlyReserveAmount } from '@/lib/fixedExpense'
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>
 
@@ -65,40 +62,24 @@ async function closeOneMonth(
   userId: string,
   year: number,
   month: number,
-  baseIncome: number,
-  timeZone: string
+  baseIncome: number
 ): Promise<boolean> {
   const { start, end } = monthRangeFor(year, month)
-  const { startUtc, endUtc } = monthRangeUtcInstantFor(year, month, timeZone)
 
   const prev = month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 }
 
   const [
     { data: pillars, error: pillarsError },
-    { data: categories, error: categoriesError },
     { data: transactions, error: transactionsError },
-    { data: dominoEvents, error: dominoError },
     { data: carriedRows, error: carriedError },
   ] = await Promise.all([
     supabase.from('pillars').select('id, name, monthly_amount').eq('user_id', userId),
     supabase
-      .from('categories')
-      .select(
-        'id, pillar_id, fixed_amount, auto_repeat, fixed_start_date, fixed_interval_unit, fixed_interval_count, fixed_reserve_ahead'
-      )
-      .eq('user_id', userId),
-    supabase
       .from('transactions')
-      .select('pillar_id, category_id, amount, is_allocation')
+      .select('pillar_id, category_id, amount, is_allocation, kind')
       .eq('user_id', userId)
       .gte('date', start)
       .lte('date', end),
-    supabase
-      .from('domino_events')
-      .select('source_category_id, affected_category_id, debt_id, amount')
-      .eq('user_id', userId)
-      .gte('created_at', startUtc)
-      .lt('created_at', endUtc),
     supabase
       .from('monthly_budgets')
       .select('pillar_id, budgeted_amount, carried_over, spent_amount')
@@ -110,7 +91,7 @@ async function closeOneMonth(
 
   // Una lectura con error NO es "no hay datos": cerrar con eso guardaría un
   // mes con cifras incompletas para siempre. Se aborta y se reintenta después.
-  const readError = pillarsError ?? categoriesError ?? transactionsError ?? dominoError ?? carriedError
+  const readError = pillarsError ?? transactionsError ?? carriedError
   if (readError) {
     console.error('[closeOneMonth] read error, month not closed:', {
       message: readError.message,
@@ -127,36 +108,12 @@ async function closeOneMonth(
   }
 
   const typedPillars: PillarRow[] = pillars ?? []
-  const ahorroPillarId = typedPillars.find((p) => p.name === 'ahorro')?.id ?? ''
-  const gastoPillarId = typedPillars.find((p) => p.name === 'gasto')?.id ?? ''
-  const categoryPillarById = Object.fromEntries((categories ?? []).map((c) => [c.id, c.pillar_id]))
-  const dominoPillarAdjustments = computeDominoPillarAdjustments(
-    dominoEvents ?? [],
-    categoryPillarById,
-    ahorroPillarId,
-    gastoPillarId
-  )
-
-  // Gastos fijos con "reservar desde ya" (mismo criterio que
-  // app/(app)/page.tsx) — se calcula "a fin de ese mes" para que el cierre
-  // quede igual a como se vio en vivo mientras ese mes estaba en curso.
   const closingDay = { year, month, day: daysInMonth(year, month) }
-  const fixedReserveByPillarId: Record<string, number> = {}
-  const reservedCategoryIds: string[] = []
-  for (const c of categories ?? []) {
-    if (!c.auto_repeat || !c.fixed_reserve_ahead || !isFixedExpenseScheduled(c)) continue
-    reservedCategoryIds.push(c.id)
-    const reserve = monthlyReserveAmount(c, closingDay, daysInMonth(year, month))
-    fixedReserveByPillarId[c.pillar_id] = (fixedReserveByPillarId[c.pillar_id] ?? 0) + reserve
-  }
 
   const dashboard = computeDashboard({
     baseIncome,
     pillars: typedPillars,
     transactionsThisMonth: (transactions ?? []) as TransactionRow[],
-    fixedReserveByPillarId,
-    reservedCategoryIds,
-    dominoPillarAdjustments,
     carriedOverByPillarId,
     today: closingDay,
   })
@@ -240,7 +197,7 @@ export async function closeElapsedMonths(supabase: SupabaseClient, userId: strin
   let closedAny = false
 
   while (cursor.year < today.year || (cursor.year === today.year && cursor.month < today.month)) {
-    const closed = await closeOneMonth(supabase, userId, cursor.year, cursor.month, profile.base_income, timeZone)
+    const closed = await closeOneMonth(supabase, userId, cursor.year, cursor.month, profile.base_income)
     // Si un mes no se pudo cerrar, no se salta al siguiente: cada mes usa el
     // arrastre del anterior. Queda pendiente para la próxima carga.
     if (!closed) break

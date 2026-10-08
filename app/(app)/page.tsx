@@ -8,22 +8,19 @@ import PageReadySignal from './PageReadySignal'
 import { createClient } from '@/lib/supabase/server'
 import {
   computeDashboard,
-  daysInMonth,
+  dailyBudgetFromFreeMoney,
   incomeCoverage,
   monthRangeIn,
-  monthRangeUtcInstant,
   todayIn,
   type PillarName,
 } from '@/lib/dashboard'
 import { getUserTimeZone } from '@/lib/userTimezone.server'
 import { lastDueOccurrence } from '@/lib/debts'
-import { computeDominoPillarAdjustments } from '@/lib/domino'
 import {
   isFixedExpensePending,
   isFixedExpenseScheduled,
   lastFixedExpenseOccurrence,
   lastFixedExpensePaymentDate,
-  monthlyReserveAmount,
 } from '@/lib/fixedExpense'
 import { formatBs } from '@/lib/format'
 import { closeElapsedMonths, getCarriedOverByPillarId } from '@/lib/monthClose'
@@ -54,17 +51,14 @@ export default async function DashboardPage() {
 
   const timeZone = await getUserTimeZone(supabase, userId)
   const { start, end } = monthRangeIn(timeZone)
-  const { startUtc, endUtc } = monthRangeUtcInstant(timeZone)
   const today = todayIn(timeZone)
 
-  // Todas las categorías del usuario (sin filtrar deleted_at: una categoría
-  // borrada que fue afectada por un dominó igual tiene que poder mapearse a
-  // su pilar más abajo). Se usa tanto para generar los gastos fijos
-  // pendientes como para las consultas que siguen.
+  // Todas las categorías del usuario. Se usa tanto para contar los gastos
+  // fijos pendientes como para el registro rápido.
   const { data: categories } = await supabase
     .from('categories')
     .select(
-      'id, pillar_id, name, fixed_amount, auto_repeat, fixed_start_date, fixed_interval_unit, fixed_interval_count, fixed_reserve_ahead, is_general, deleted_at'
+      'id, pillar_id, name, fixed_amount, auto_repeat, fixed_start_date, fixed_interval_unit, fixed_interval_count, is_general, deleted_at'
     )
     .eq('user_id', userId)
 
@@ -148,7 +142,6 @@ export default async function DashboardPage() {
     { data: profile },
     { data: pillars },
     { data: transactions },
-    { data: dominoEvents },
     carriedOverByPillarId,
     { data: freeMoneyRows },
   ] = await Promise.all([
@@ -160,16 +153,10 @@ export default async function DashboardPage() {
     supabase.from('pillars').select('id, name, monthly_amount').eq('user_id', userId),
     supabase
       .from('transactions')
-      .select('pillar_id, category_id, amount, is_allocation')
+      .select('pillar_id, category_id, amount, is_allocation, kind')
       .eq('user_id', userId)
       .gte('date', start)
       .lte('date', end),
-    supabase
-      .from('domino_events')
-      .select('source_category_id, affected_category_id, debt_id, amount')
-      .eq('user_id', userId)
-      .gte('created_at', startUtc)
-      .lt('created_at', endUtc),
     getCarriedOverByPillarId(supabase, userId, today.year, today.month),
     supabase.from('free_money_transactions').select('amount').eq('user_id', userId),
   ])
@@ -180,42 +167,22 @@ export default async function DashboardPage() {
   // cuando termina el mes.
   const freeMoneyAccumulated = (freeMoneyRows ?? []).reduce((sum, r) => sum + r.amount, 0)
 
-  const ahorroPillarId = pillars?.find((p) => p.name === 'ahorro')?.id ?? ''
   const gastoPillarId = pillars?.find((p) => p.name === 'gasto')?.id ?? ''
-  const categoryPillarById = Object.fromEntries((categories ?? []).map((c) => [c.id, c.pillar_id]))
-  const dominoPillarAdjustments = computeDominoPillarAdjustments(
-    dominoEvents ?? [],
-    categoryPillarById,
-    ahorroPillarId,
-    gastoPillarId
-  )
-
-  // Gastos fijos con "reservar desde ya" (fixed_reserve_ahead, migración
-  // 0018): se restan del presupuesto diario aunque su transacción todavía
-  // no exista, prorrateados según su frecuencia — mismo criterio "Crítico"
-  // del manual.md §5.2, ahora opcional por categoría. Los que no la
-  // activaron no pasan por acá: su transacción, ya generada arriba, es un
-  // movimiento normal más.
-  const daysThisMonth = daysInMonth(today.year, today.month)
-  const fixedReserveByPillarId: Record<string, number> = {}
-  const reservedCategoryIds: string[] = []
-  for (const c of autoFixed) {
-    if (!c.fixed_reserve_ahead) continue
-    reservedCategoryIds.push(c.id)
-    const reserve = monthlyReserveAmount(c, today, daysThisMonth)
-    fixedReserveByPillarId[c.pillar_id] = (fixedReserveByPillarId[c.pillar_id] ?? 0) + reserve
-  }
 
   const dashboard = computeDashboard({
     baseIncome: profile?.base_income ?? 0,
     pillars: pillars ?? [],
     transactionsThisMonth: transactions ?? [],
-    fixedReserveByPillarId,
-    reservedCategoryIds,
-    dominoPillarAdjustments,
     carriedOverByPillarId,
     today,
   })
+
+  // Dinero libre disponible ahora, y el presupuesto diario que sale de él:
+  // los gastos del día a día no tienen presupuesto propio, salen de Dinero
+  // libre (o de Ahorro), así que "Puedes gastar hoy" es el Dinero libre
+  // repartido en los días que quedan del mes.
+  const freeMoneyTotal = freeMoneyAccumulated + dashboard.freeMoney
+  const daily = dailyBudgetFromFreeMoney(freeMoneyTotal, today)
 
   const activeCategories = (categories ?? []).filter((c) => !c.deleted_at)
 
@@ -242,17 +209,20 @@ export default async function DashboardPage() {
         <p className="text-sm text-zinc-500">Puedes gastar hoy</p>
         <p
           className={`mt-1 text-5xl font-semibold tracking-tight tabular-nums ${
-            dashboard.isDeficit ? 'text-red-600' : ''
+            daily.isOver ? 'text-red-600' : ''
           }`}
         >
-          {formatBs(dashboard.dailyBudget)} Bs
+          {formatBs(daily.amount)} Bs
         </p>
-        {dashboard.isDeficit ? (
-          <p className="mt-2 text-sm text-red-600">
-            Te excediste del presupuesto de Gasto este mes.
-          </p>
+        {daily.isOver ? (
+          <p className="mt-2 text-sm text-red-600">Ya no te queda Dinero libre este mes.</p>
         ) : (
-          <div className="mx-auto mt-3 h-1 w-14 rounded-full bg-gradient-to-r from-brand to-brand-violet" />
+          <>
+            <div className="mx-auto mt-3 h-1 w-14 rounded-full bg-gradient-to-r from-brand to-brand-violet" />
+            <p className="mt-2 text-xs text-zinc-500">
+              Tu Dinero libre ({formatBs(freeMoneyTotal)} Bs) repartido en los {daily.daysRemaining} días que quedan
+            </p>
+          </>
         )}
       </section>
 
@@ -287,7 +257,7 @@ export default async function DashboardPage() {
         className="flex items-center justify-between rounded-xl border-l-4 border-brand-violet bg-brand-violet/10 p-3 transition-colors hover:brightness-95 dark:hover:brightness-110"
       >
         <p className="text-sm font-medium">Dinero libre</p>
-        <p className="text-sm font-semibold text-brand-violet">{formatBs(freeMoneyAccumulated + dashboard.freeMoney)} Bs →</p>
+        <p className="text-sm font-semibold text-brand-violet">{formatBs(freeMoneyTotal)} Bs →</p>
       </Link>
 
       {needsIncomeConfirmation && (
@@ -323,8 +293,8 @@ export default async function DashboardPage() {
         </Link>
       )}
 
-      {/* Acceso rápido a registrar gasto/ingreso extra. */}
-      <QuickAddForm pillars={pillars ?? []} categories={activeCategories} />
+      {/* Acceso rápido a registrar un gasto del día a día o un ingreso extra. */}
+      <QuickAddForm pillars={pillars ?? []} categories={activeCategories} freeMoneyTotal={freeMoneyTotal} />
     </div>
   )
 }

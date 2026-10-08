@@ -23,7 +23,19 @@ const PILLAR_LABEL: Record<PillarName, string> = {
   inversion: 'Inversión',
 }
 
-function GroupCard({ href, title, count, accumulated }: { href: string; title: string; count: number; accumulated: number }) {
+function GroupCard({
+  href,
+  title,
+  count,
+  accumulated,
+  label = 'acumulado',
+}: {
+  href: string
+  title: string
+  count: number
+  accumulated: number
+  label?: string
+}) {
   return (
     <Link
       href={href}
@@ -35,7 +47,7 @@ function GroupCard({ href, title, count, accumulated }: { href: string; title: s
       </div>
       <div className="text-right">
         <p className="font-semibold">{formatBs(accumulated)} Bs</p>
-        <p className="text-sm text-zinc-500">acumulado</p>
+        <p className="text-sm text-zinc-500">{label}</p>
       </div>
     </Link>
   )
@@ -95,9 +107,10 @@ export default async function PillarCategoriesPage({
           />
           <GroupCard
             href={`/mi-dinero/${pillarId}/cotidianos`}
-            title="Gastos variables"
+            title="Gastos del día a día"
             count={data.everydayCategories.length}
-            accumulated={data.everydayAccumulated}
+            accumulated={-data.everydayAccumulated}
+            label="gastado"
           />
         </div>
       ) : (

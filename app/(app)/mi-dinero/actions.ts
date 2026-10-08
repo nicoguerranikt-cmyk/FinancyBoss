@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { todayIn, type PillarName } from '@/lib/dashboard'
 import { getUserTimeZone } from '@/lib/userTimezone.server'
-import { EPSILON } from '@/lib/domino'
+import { EPSILON } from '@/lib/money'
 import { isFixedExpenseScheduled, lastFixedExpenseOccurrence } from '@/lib/fixedExpense'
 import { validateRecurrenceSchedule, type RecurrenceUnit } from '@/lib/recurrence'
 
@@ -144,7 +144,7 @@ export async function createCategory(input: {
   revalidatePath('/mi-dinero')
   revalidatePath('/mi-dinero/[pillarId]', 'page')
   if (input.fixedAmount !== undefined) {
-    revalidatePath('/') // fixed_amount se resta del saldo del pilar y del presupuesto diario
+    revalidatePath('/') // fixed_amount cambia el monto del pilar y el Dinero libre
   }
   return {}
 }
@@ -156,14 +156,11 @@ export type UpdateCategoryInput = {
   autoRepeat?: boolean
   // Requerido cuando autoRepeat se manda en true — reemplaza el viejo "una
   // vez al mes, el día 1" por una fecha real + cada cuántos días/meses
-  // (mismo mecanismo que el plan de pago automático de Deudas). reserveAhead
-  // es la elección "¿se reserva del presupuesto desde ya, o recién cuando
-  // llega la fecha?" (ver migración 0018 y lib/fixedExpense.ts).
+  // (mismo mecanismo que el plan de pago automático de Deudas).
   fixedSchedule?: {
     startDate: string
     intervalUnit: RecurrenceUnit
     intervalCount: number
-    reserveAhead: boolean
   }
   // Ahorro con propósito (migración 0022): meta + fecha van juntas, igual
   // que fixedSchedule arriba — null borra la meta (los dos campos a la vez,
@@ -199,8 +196,7 @@ export async function updateCategory(input: UpdateCategoryInput): Promise<{ erro
       return { error: 'El monto debe ser mayor o igual a 0.' }
     }
 
-    // Doble consulta (categoría → pilar) en vez de un embedded select, para
-    // seguir el mismo patrón que resolveDeficit en app/(app)/actions.ts.
+    // Doble consulta (categoría → pilar) en vez de un embedded select.
     const { data: category } = await supabase
       .from('categories')
       .select('id, pillar_id, is_general')
@@ -250,7 +246,6 @@ export async function updateCategory(input: UpdateCategoryInput): Promise<{ erro
         patch.fixed_start_date = input.fixedSchedule.startDate
         patch.fixed_interval_unit = input.fixedSchedule.intervalUnit
         patch.fixed_interval_count = input.fixedSchedule.intervalCount
-        patch.fixed_reserve_ahead = input.fixedSchedule.reserveAhead
       } else {
         patch.fixed_start_date = null
         patch.fixed_interval_unit = null
@@ -315,7 +310,7 @@ export async function updateCategory(input: UpdateCategoryInput): Promise<{ erro
   revalidatePath('/mi-dinero/[pillarId]', 'page')
   revalidatePath('/mi-dinero/[pillarId]/[categoryId]', 'page')
   if (input.fixedAmount !== undefined) {
-    revalidatePath('/') // fixed_amount se resta del saldo del pilar y del presupuesto diario
+    revalidatePath('/') // fixed_amount cambia el monto del pilar y el Dinero libre
   }
   return {}
 }

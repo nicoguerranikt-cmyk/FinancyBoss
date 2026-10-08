@@ -40,8 +40,6 @@ export default function EstadisticasView({
   trendPoints,
   categoryStats,
   donutSegments,
-  dominoCount,
-  mostAffected,
   debtStats,
   debtorStats,
 }: {
@@ -55,8 +53,6 @@ export default function EstadisticasView({
   trendPoints: TrendPoint[]
   categoryStats: CategoryStat[]
   donutSegments: DonutSegment[]
-  dominoCount: number
-  mostAffected: { name: string; amount: number }[]
   debtStats: DebtStat[]
   debtorStats: DebtorStat[]
 }) {
@@ -154,22 +150,6 @@ export default function EstadisticasView({
             ))}
             </div>
           </>
-        )}
-      </section>
-
-      <section>
-        <h2 className="text-lg font-semibold tracking-tight">Efecto dominó</h2>
-        <p className="mt-2 text-sm text-zinc-500">
-          Se activó {dominoCount} {dominoCount === 1 ? 'vez' : 'veces'} este mes.
-        </p>
-        {mostAffected.length > 0 && (
-          <ul className="mt-2 flex flex-col gap-1 text-sm text-zinc-500">
-            {mostAffected.map((m) => (
-              <li key={m.name}>
-                {m.name}: {formatBs(m.amount)} Bs
-              </li>
-            ))}
-          </ul>
         )}
       </section>
 

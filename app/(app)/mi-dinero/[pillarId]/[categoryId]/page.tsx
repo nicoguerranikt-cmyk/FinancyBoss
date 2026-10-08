@@ -4,10 +4,9 @@
 // (lo que antes era la edición inline en Mi Dinero: nombre, %, gasto fijo,
 // borrar).
 //
-// Ver plan: el acumulado es la suma histórica de transactions.amount para
-// esta categoría (sin filtro de mes) — no incluye ajustes del efecto dominó
-// (domino_events no escribe en transactions, y hoy ese efecto se aplica a
-// nivel de pilar completo, no de categoría — límite conocido, no un bug).
+// El acumulado es la suma histórica de transactions.amount para esta
+// categoría (sin filtro de mes). En una categoría de gastos del día a día
+// es lo que se gastó (negativo): no tiene presupuesto propio.
 
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
@@ -54,7 +53,7 @@ export default async function CategoryDetailPage({
   const { data: category } = await supabase
     .from('categories')
     .select(
-      'id, pillar_id, name, fixed_amount, auto_repeat, fixed_start_date, fixed_interval_unit, fixed_interval_count, fixed_reserve_ahead, is_general, goal_amount, goal_target_date'
+      'id, pillar_id, name, fixed_amount, auto_repeat, fixed_start_date, fixed_interval_unit, fixed_interval_count, is_general, goal_amount, goal_target_date'
     )
     .eq('id', categoryId)
     .eq('pillar_id', pillarId)

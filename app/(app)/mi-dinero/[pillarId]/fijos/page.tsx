@@ -38,12 +38,10 @@ export default async function GastosFijosPage({
   const data = await loadGastoPillarData(supabase, userId, pillarId)
   if (!data.pillar || data.pillar.name !== 'gasto') notFound()
 
-  // Migración 0020: Gasto ya es un monto fijo (data.pillar.monthly_amount),
-  // así que la comparación es directa en Bs — no hace falta pasar por %
-  // para saber si los gastos fijos ya usan todo el presupuesto de Gasto.
+  // Gasto son solo los gastos fijos (migración 0041): su monto es la suma de
+  // ellos. Si los fijos superan el monto de Gasto, se avisa.
   const fixedTotal = data.fixedCategories.reduce((sum, c) => sum + (c.fixed_amount as number), 0)
   const gastoAmount = data.pillar?.monthly_amount ?? 0
-  const remaining = Math.max(0, gastoAmount - fixedTotal)
   const percentValid = fixedTotal <= gastoAmount
 
   // Gasto fijo con cuota vencida sin confirmar (ver confirmFixedExpense,
@@ -85,8 +83,8 @@ export default async function GastosFijosPage({
       {data.fixedCategories.length > 0 && (
         <div className={sumBarClass(percentValid)}>
           {percentValid
-            ? `Tus gastos fijos usan ${formatBs(fixedTotal)} Bs de los ${formatBs(gastoAmount)} Bs que destinas a Gasto — te quedan ${formatBs(remaining)} Bs para tus gastos variables.`
-            : `Ojo: tus gastos fijos (${formatBs(fixedTotal)} Bs) ya superan los ${formatBs(gastoAmount)} Bs que destinas a Gasto — no te queda margen para gastos variables.`}
+            ? `Tus gastos fijos suman ${formatBs(fixedTotal)} Bs al mes (de los ${formatBs(gastoAmount)} Bs que destinas a Gasto).`
+            : `Ojo: tus gastos fijos (${formatBs(fixedTotal)} Bs) superan los ${formatBs(gastoAmount)} Bs que destinas a Gasto.`}
         </div>
       )}
 

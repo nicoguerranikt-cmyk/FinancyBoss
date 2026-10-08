@@ -2,7 +2,7 @@
 // mes en curso se calcula en vivo (igual que el Dashboard); los meses
 // pasados leen el resumen congelado en monthly_budgets (ver
 // lib/monthClose.ts) para "presupuesto asignado / saldo acumulado", y
-// calculan en vivo el resto (categorías, dominó, deudas, deudores) contra
+// calculan en vivo el resto (categorías, deudas, deudores) contra
 // las fechas de ese mes — esos datos son hechos históricos, no cambian
 // según cuándo se consulten.
 
@@ -12,14 +12,11 @@ import {
   dateIn,
   daysInMonth,
   monthRangeFor,
-  monthRangeUtcInstantFor,
   resolveTimeZone,
   todayIn,
   type PillarName,
   type PillarRow,
 } from '@/lib/dashboard'
-import { computeDominoPillarAdjustments } from '@/lib/domino'
-import { isFixedExpenseScheduled, monthlyReserveAmount } from '@/lib/fixedExpense'
 import { closeElapsedMonths, getCarriedOverByPillarId } from '@/lib/monthClose'
 import {
   categoryBudgetsForMonth,
@@ -89,13 +86,11 @@ export default async function EstadisticasPage({
   const isCurrentMonth = clampedAbs === maxAbs
 
   const { start, end } = monthRangeFor(year, month)
-  const { startUtc, endUtc } = monthRangeUtcInstantFor(year, month, timeZone)
 
   const [
     { data: pillars },
     { data: categories },
     { data: transactions },
-    { data: dominoEvents },
     { data: debts },
     { data: debtors },
     { data: budgetHistory },
@@ -106,7 +101,7 @@ export default async function EstadisticasPage({
     supabase
       .from('categories')
       .select(
-        'id, name, pillar_id, fixed_amount, is_general, auto_repeat, fixed_start_date, fixed_interval_unit, fixed_interval_count, fixed_reserve_ahead, deleted_at'
+        'id, name, pillar_id, fixed_amount, is_general, deleted_at'
       )
       .eq('user_id', userId),
     supabase
@@ -115,12 +110,6 @@ export default async function EstadisticasPage({
       .eq('user_id', userId)
       .gte('date', start)
       .lte('date', end),
-    supabase
-      .from('domino_events')
-      .select('source_category_id, affected_category_id, debt_id, amount')
-      .eq('user_id', userId)
-      .gte('created_at', startUtc)
-      .lt('created_at', endUtc),
     supabase.from('debts').select('id, name, remaining_amount, status').eq('user_id', userId),
     supabase.from('debtors').select('id, name, remaining_amount, status').eq('user_id', userId),
     supabase
@@ -147,42 +136,19 @@ export default async function EstadisticasPage({
   const typedPillars: PillarRow[] = pillars ?? []
   const allTx = transactions ?? []
   const categoryById = Object.fromEntries((categories ?? []).map((c) => [c.id, c]))
-  const ahorroPillarId = typedPillars.find((p) => p.name === 'ahorro')?.id ?? ''
   const gastoPillarId = typedPillars.find((p) => p.name === 'gasto')?.id ?? ''
 
   // ---------- Por pilar: presupuesto asignado, arrastre, saldo ----------
   let pillarStats: PillarStat[]
   if (isCurrentMonth) {
-    const categoryPillarById = Object.fromEntries((categories ?? []).map((c) => [c.id, c.pillar_id]))
-    const dominoPillarAdjustments = computeDominoPillarAdjustments(
-      dominoEvents ?? [],
-      categoryPillarById,
-      ahorroPillarId,
-      gastoPillarId
-    )
     const carriedOverByPillarId = await getCarriedOverByPillarId(supabase, userId, year, month)
-
-    // isCurrentMonth === true acá siempre (este bloque solo corre en ese
-    // caso), así que la reserva se calcula contra "hoy" de verdad.
-    const daysThisMonth = daysInMonth(year, month)
-    const fixedReserveByPillarId: Record<string, number> = {}
-    const reservedCategoryIds: string[] = []
-    for (const c of categories ?? []) {
-      if (c.deleted_at || !c.auto_repeat || !c.fixed_reserve_ahead || !isFixedExpenseScheduled(c)) continue
-      reservedCategoryIds.push(c.id)
-      const reserve = monthlyReserveAmount(c, today, daysThisMonth)
-      fixedReserveByPillarId[c.pillar_id] = (fixedReserveByPillarId[c.pillar_id] ?? 0) + reserve
-    }
 
     const dashboard = computeDashboard({
       baseIncome,
       pillars: typedPillars,
       transactionsThisMonth: allTx,
-      fixedReserveByPillarId,
-      reservedCategoryIds,
-      dominoPillarAdjustments,
       carriedOverByPillarId,
-      today: { year, month, day: daysThisMonth },
+      today: { year, month, day: daysInMonth(year, month) },
     })
     pillarStats = dashboard.pillars.map((p) => ({
       pillar: p.pillar,
@@ -281,21 +247,6 @@ export default async function EstadisticasPage({
   const otros = gastoExpenseTotal - gastoCategorizedTotal + foldedExcess
   if (otros > 0.01) donutSegments.push({ name: 'Sin categoría / otros', value: otros, colorIndex: 7 })
 
-  // ---------- Efecto dominó ----------
-  const dominoCount = (dominoEvents ?? []).length
-  const affectedTotals = new Map<string, number>()
-  for (const e of dominoEvents ?? []) {
-    if (!e.affected_category_id) continue
-    affectedTotals.set(e.affected_category_id, (affectedTotals.get(e.affected_category_id) ?? 0) + e.amount)
-  }
-  const mostAffected = [...affectedTotals.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([categoryId, amount]) => ({
-      name: categoryById[categoryId]?.name ?? 'Categoría eliminada',
-      amount,
-    }))
-
   // ---------- Deudas / deudores ----------
   const paidByDebtId = new Map<string, number>()
   const collectedByDebtorId = new Map<string, number>()
@@ -351,8 +302,6 @@ export default async function EstadisticasPage({
         trendPoints={trendPoints}
         categoryStats={categoryStats}
         donutSegments={donutSegments}
-        dominoCount={dominoCount}
-        mostAffected={mostAffected}
         debtStats={debtStats}
         debtorStats={debtorStats}
       />

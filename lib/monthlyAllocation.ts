@@ -1,6 +1,6 @@
 // Reparto mensual real por categoría (manual.md — ver migración
 // 0015_reparto_mensual_por_categoria.sql). Puro, sin imports de Supabase,
-// igual que lib/dashboard.ts/lib/domino.ts: se reusa tal cual desde el
+// igual que lib/dashboard.ts: se reusa tal cual desde el
 // cliente (para mostrar la propuesta editable antes de confirmar) y desde
 // el server (lib/monthlyAllocation.server.ts, para generar los montos por
 // defecto cuando no hay overrides).
@@ -14,8 +14,7 @@
 // plata de la que hay. Lo que sobra (o todo, si nadie tiene monto) va a la
 // categoría "general" del pilar.
 
-import { EPSILON } from './domino'
-import { distributeCents } from './money'
+import { EPSILON, distributeCents } from './money'
 
 export type AllocationCategory = {
   id: string

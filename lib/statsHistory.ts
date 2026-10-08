@@ -20,9 +20,13 @@ export function incomeForMonth(input: {
 //   - kind 'transfer': un lado de un traslado entre cuentas propias (asignar
 //     Dinero libre, aumentar un gasto fijo desde Ahorro, convertir USD a Bs).
 //   - kind 'opening_balance': saldo inicial, plata que ya tenías.
-// Mover plata propia nunca es un ingreso nuevo ni un gasto (migración 0037).
+//   - kind 'funding': el lado del origen de un gasto del día a día (la baja de
+//     Dinero libre o de Ahorro). El gasto en sí es el otro lado (kind
+//     'daily_spend'), que SÍ es un gasto real y no es interno.
+// Mover plata propia nunca es un ingreso nuevo ni un gasto (migraciones 0037
+// y 0041).
 export function isInternalMovement(t: { is_allocation: boolean; kind: string | null }): boolean {
-  return t.is_allocation || t.kind !== null
+  return t.is_allocation || t.kind === 'transfer' || t.kind === 'opening_balance' || t.kind === 'funding'
 }
 
 // Ingreso extra REAL de un mes registrado en las categorías: ingresos que
@@ -37,8 +41,8 @@ export function externalExtraIncome(
 }
 
 // Ingreso real que entró directo a Dinero libre en el mes (un movimiento
-// "Ingreso" a mano). No cuentan: los traslados (asignar a una categoría, que
-// ya son negativos), ni el "Sobrante del mes" que el cierre acredita
+// "Ingreso" a mano). No cuentan: los traslados y los gastos del día a día que
+// salen de Dinero libre (negativos), ni el "Sobrante del mes" que el cierre acredita
 // (credit_month): ese es el propio ingreso base que no se asignó, no plata
 // nueva.
 export function externalFreeMoneyIncome(

@@ -1,5 +1,5 @@
 // Datos del pilar Gasto, compartidos entre la pantalla "elegí" (page.tsx),
-// "Gastos fijos" (fijos/page.tsx) y "Gastos cotidianos" (cotidianos/page.tsx)
+// "Gastos fijos" (fijos/page.tsx) y "Gastos del día a día" (cotidianos/page.tsx)
 // — separarlos en pantallas propias fue pedido del usuario (antes vivían
 // juntos en una sola lista larga). Un solo lugar para las 4 consultas evita
 // triplicarlas entre las 3 pantallas.
@@ -23,7 +23,7 @@ export async function loadGastoPillarData(supabase: SupabaseClient, userId: stri
       .eq('user_id', userId)
       .is('deleted_at', null)
       .order('created_at', { ascending: true }),
-    supabase.from('transactions').select('category_id, amount, date').eq('user_id', userId).eq('pillar_id', pillarId),
+    supabase.from('transactions').select('category_id, amount, date, kind').eq('user_id', userId).eq('pillar_id', pillarId),
   ])
 
   // La página que llama a esto hace `if (!data.pillar) notFound()` — sin
@@ -61,21 +61,37 @@ export async function loadGastoPillarData(supabase: SupabaseClient, userId: stri
   const fixedCategories = allCategories.filter((c) => c.fixed_amount !== null)
   const everydayCategories = allCategories.filter((c) => c.fixed_amount === null)
 
+  // Un gasto del día a día (kind 'daily_spend') se registra en su categoría de
+  // Gasto pero NO es plata del pilar: sale de Dinero libre o de Ahorro. Por eso
+  // el total del pilar y el de los gastos fijos no lo cuentan; en las
+  // categorías del día a día sí se ve lo gastado (negativo).
+  const activeIds = new Set(allCategories.map((c) => c.id))
+  const allRows = transactions ?? []
+  const pillarRows = allRows.filter((t) => t.kind !== 'daily_spend')
+  const byCategory = summarizePillarMovements(allRows, activeIds).byCategoryId
   // Una categoría eliminada (borrado suave) conserva sus movimientos: su plata
   // sigue en el pilar, así que cuenta en el total (ver lib/pillarTotals.ts).
   const {
-    byCategoryId: accumulatedByCategoryId,
     sinCategoria,
     categoriasEliminadas,
     total: totalAcumulado,
-  } = summarizePillarMovements(transactions ?? [], new Set(allCategories.map((c) => c.id)))
+  } = summarizePillarMovements(pillarRows, activeIds)
+  const accumulatedByCategoryId = byCategory
 
   const sum = (rows: CategoryListRow[]) => rows.reduce((s, c) => s + (accumulatedByCategoryId[c.id] ?? 0), 0)
-  const fixedAccumulated = sum(fixedCategories)
   // Lo que no está en una categoría activa (movimientos directos al pilar y
-  // categorías eliminadas) se junta con los variables, así los dos grupos de
-  // Gasto siempre suman el total de arriba.
-  const everydayAccumulated = sum(everydayCategories) + sinCategoria + categoriasEliminadas
+  // categorías eliminadas) va con los gastos fijos, así los gastos fijos son
+  // siempre el total del pilar.
+  const fixedAccumulated = sum(fixedCategories) + sinCategoria + categoriasEliminadas
+  // Gastos del día a día: lo gastado (negativo), sin presupuesto. Se suma lo
+  // de sus categorías activas, lo registrado sin categoría y lo de categorías
+  // eliminadas, para que el total sea todo lo gastado en el día a día.
+  const dailyRows = allRows.filter((t) => t.kind === 'daily_spend')
+  const everydaySinCategoria = dailyRows.filter((t) => !t.category_id).reduce((s, t) => s + t.amount, 0)
+  const everydayEliminadas = dailyRows
+    .filter((t) => t.category_id && !activeIds.has(t.category_id))
+    .reduce((s, t) => s + t.amount, 0)
+  const everydayAccumulated = sum(everydayCategories) + everydaySinCategoria + everydayEliminadas
 
   return {
     pillar,
@@ -86,6 +102,8 @@ export async function loadGastoPillarData(supabase: SupabaseClient, userId: stri
     lastTransactionDateByCategoryId,
     sinCategoria,
     categoriasEliminadas,
+    everydaySinCategoria,
+    everydayEliminadas,
     fixedAccumulated,
     everydayAccumulated,
     totalAcumulado,

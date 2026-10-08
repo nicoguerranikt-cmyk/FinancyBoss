@@ -26,7 +26,6 @@ type CategoryRow = {
   fixed_start_date: string | null
   fixed_interval_unit: RecurrenceUnit | null
   fixed_interval_count: number | null
-  fixed_reserve_ahead: boolean
   is_general: boolean
   goal_amount: number | null
   goal_target_date: string | null
@@ -46,7 +45,6 @@ type Draft = {
   fixedStartDate: string
   fixedIntervalUnit: RecurrenceUnit
   fixedIntervalCount: string
-  fixedReserveAhead: boolean
   goalAmount: string
   goalTargetDate: string
 }
@@ -59,7 +57,6 @@ function draftFromCategory(c: CategoryRow, todayIso: string): Draft {
     fixedStartDate: c.fixed_start_date ?? todayIso,
     fixedIntervalUnit: c.fixed_interval_unit ?? 'month',
     fixedIntervalCount: c.fixed_interval_count === null ? '1' : String(c.fixed_interval_count),
-    fixedReserveAhead: c.fixed_reserve_ahead,
     goalAmount: c.goal_amount === null ? '' : String(c.goal_amount),
     goalTargetDate: c.goal_target_date ?? '',
   }
@@ -95,8 +92,7 @@ function computeCategoryPatch(
   const scheduleChanged =
     draft.fixedStartDate !== (category.fixed_start_date ?? draft.fixedStartDate) ||
     draft.fixedIntervalUnit !== (category.fixed_interval_unit ?? draft.fixedIntervalUnit) ||
-    draft.fixedIntervalCount !== (category.fixed_interval_count === null ? draft.fixedIntervalCount : String(category.fixed_interval_count)) ||
-    draft.fixedReserveAhead !== category.fixed_reserve_ahead
+    draft.fixedIntervalCount !== (category.fixed_interval_count === null ? draft.fixedIntervalCount : String(category.fixed_interval_count))
 
   if (draft.autoRepeat !== category.auto_repeat || (draft.autoRepeat && scheduleChanged)) {
     patch.autoRepeat = draft.autoRepeat
@@ -111,7 +107,6 @@ function computeCategoryPatch(
           startDate: draft.fixedStartDate,
           intervalUnit: draft.fixedIntervalUnit,
           intervalCount: count,
-          reserveAhead: draft.fixedReserveAhead,
         }
       }
     }
@@ -920,29 +915,10 @@ export default function CategoryDetailClient({
                       </option>
                     </select>
                   </div>
-                  <div className="flex flex-col gap-1.5 pt-1">
-                    <label className="flex items-start gap-2 text-sm">
-                      <input
-                        type="radio"
-                        name="reserve-ahead"
-                        checked={draft.fixedReserveAhead}
-                        onChange={() => updateDraft({ fixedReserveAhead: true })}
-                        className="mt-0.5"
-                      />
-                      Reservar del presupuesto desde ya (no aparece como disponible aunque
-                      todavía no se haya descontado)
-                    </label>
-                    <label className="flex items-start gap-2 text-sm">
-                      <input
-                        type="radio"
-                        name="reserve-ahead"
-                        checked={!draft.fixedReserveAhead}
-                        onChange={() => updateDraft({ fixedReserveAhead: false })}
-                        className="mt-0.5"
-                      />
-                      Recién descontar del presupuesto cuando llegue la fecha
-                    </label>
-                  </div>
+                  <p className="pt-1 text-xs text-zinc-500">
+                    Cuando llegue la fecha te avisamos y tú confirmas con &quot;Ya lo pagué&quot;. Nunca se
+                    descuenta solo.
+                  </p>
                 </div>
               )}
             </div>

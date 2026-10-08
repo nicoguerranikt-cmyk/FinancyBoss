@@ -3,7 +3,6 @@ import {
   dateIn,
   isValidTimeZone,
   monthRangeIn,
-  monthRangeUtcInstantFor,
   todayIn,
 } from '@/lib/dashboard'
 
@@ -27,37 +26,6 @@ describe('todayIn — "hoy" según la zona del usuario', () => {
 describe('dateIn — convertir un instante a la fecha del usuario', () => {
   it('un registro creado a las 02:00 UTC es del día anterior en Bolivia', () => {
     expect(dateIn(new Date('2026-03-15T02:00:00Z'), 'America/La_Paz')).toEqual({ year: 2026, month: 3, day: 14 })
-  })
-})
-
-describe('monthRangeUtcInstantFor — inicio y fin del mes a medianoche LOCAL', () => {
-  it('Bolivia: medianoche = 04:00 UTC todo el año', () => {
-    expect(monthRangeUtcInstantFor(2026, 10, 'America/La_Paz')).toEqual({
-      startUtc: '2026-10-01T04:00:00.000Z',
-      endUtc: '2026-11-01T04:00:00.000Z',
-    })
-  })
-
-  it('Argentina (UTC-3): medianoche = 03:00 UTC', () => {
-    expect(monthRangeUtcInstantFor(2026, 10, 'America/Argentina/Buenos_Aires').startUtc).toBe('2026-10-01T03:00:00.000Z')
-  })
-
-  it('España con horario de verano: octubre empieza en UTC+2 y noviembre en UTC+1', () => {
-    expect(monthRangeUtcInstantFor(2026, 10, 'Europe/Madrid')).toEqual({
-      startUtc: '2026-09-30T22:00:00.000Z',
-      endUtc: '2026-10-31T23:00:00.000Z',
-    })
-  })
-
-  it('Nueva York: el fin de noviembre ya es horario de invierno (UTC-5)', () => {
-    expect(monthRangeUtcInstantFor(2026, 11, 'America/New_York')).toEqual({
-      startUtc: '2026-11-01T04:00:00.000Z',
-      endUtc: '2026-12-01T05:00:00.000Z',
-    })
-  })
-
-  it('diciembre pasa al año siguiente', () => {
-    expect(monthRangeUtcInstantFor(2026, 12, 'America/La_Paz').endUtc).toBe('2027-01-01T04:00:00.000Z')
   })
 })
 

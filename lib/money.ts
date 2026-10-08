@@ -24,3 +24,6 @@ export function distributeCents(parts: number[]): number[] {
   }
   return result.map((c) => c / 100)
 }
+
+// Tolerancia para comparar montos en Bs (medio centavo): evita rechazar un monto por ruido de punto flotante.
+export const EPSILON = 0.005

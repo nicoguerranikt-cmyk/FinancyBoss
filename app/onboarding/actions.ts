@@ -17,11 +17,6 @@ export type OnboardingInput = {
   // dueDate (YYYY-MM-DD): fecha de cobro de un gasto fijo (solo Gasto con
   // monto). Queda programado cada mes desde esa fecha (migración 0040).
   categories: { pillar: PillarKey; name: string; amount?: number; dueDate?: string }[]
-  // Cuánto de tu ingreso se descuenta cada mes para Gasto (migración 0039). Los
-  // gastos fijos (categorías de Gasto con monto) salen de ese monto, y lo que
-  // queda es el dinero para el día a día. Si falta, el monto de Gasto es la
-  // suma de sus categorías.
-  gastoAmount?: number
   // Zona horaria detectada por el navegador (ej. "America/La_Paz"). Es
   // opcional: si falta o es inválida queda la de Bolivia (la del default de la
   // columna, migración 0035) y se puede cambiar después en Más → Perfil.
@@ -46,20 +41,11 @@ export async function completeOnboarding(
     const scheduleError = validateRecurrenceSchedule({ startDate: c.dueDate, intervalUnit: 'month', intervalCount: 1 })
     if (scheduleError) return { error: `La fecha de cobro de "${c.name}" no es válida.` }
   }
-  if (input.gastoAmount !== undefined && !(input.gastoAmount >= 0)) {
-    return { error: 'El monto de Gasto no puede ser negativo.' }
-  }
-  const amountOf = (pillar: PillarKey) =>
-    input.categories
-      .filter((c) => c.pillar === pillar)
-      .reduce((acc, c) => acc + (c.amount && c.amount > 0 ? c.amount : 0), 0)
-  const fixedGasto = amountOf('gasto')
-  if (input.gastoAmount !== undefined && input.gastoAmount < fixedGasto) {
-    return { error: 'El monto de Gasto no puede ser menor que la suma de tus gastos fijos.' }
-  }
+  // En Gasto solo llevan monto los gastos fijos: una categoría del día a día no
+  // puede traer uno (el monto del pilar es la suma de sus fijos).
   // "No se puede fabricar plata de la nada": la suma de los montos puede ser
   // menor que el ingreso (el resto queda como dinero libre), pero nunca más.
-  const sum = amountOf('ahorro') + (input.gastoAmount ?? fixedGasto) + amountOf('inversion')
+  const sum = input.categories.reduce((acc, c) => acc + (c.amount && c.amount > 0 ? c.amount : 0), 0)
   if (sum > input.income) {
     return { error: `Esos montos suman ${sum} Bs, más que tu ingreso de ${input.income} Bs.` }
   }
@@ -89,7 +75,6 @@ export async function completeOnboarding(
     // dueDate se manda como start_date, el nombre que lee la función SQL.
     p_categories: input.categories.map(({ dueDate, ...c }) => ({ ...c, start_date: dueDate ?? null })),
     p_username: username,
-    p_gasto_amount: input.gastoAmount ?? null,
   })
 
   if (error) {

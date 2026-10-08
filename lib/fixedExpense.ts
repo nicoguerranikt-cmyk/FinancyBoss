@@ -17,8 +17,6 @@ export type FixedExpenseConfig = {
   fixed_interval_count: number | null
 }
 
-export type FixedExpenseReserveConfig = FixedExpenseConfig & { fixed_reserve_ahead: boolean }
-
 function toRecurrenceConfig(c: FixedExpenseConfig) {
   return {
     start_date: c.fixed_start_date,
@@ -70,23 +68,4 @@ export function isFixedExpensePending(dueDate: string, lastPaymentDate: string |
 // el monto fijo de la categoría; sumarlo otra vez duplicaría lo asignado.
 export function fixedExpenseExtraThisMonth(transactions: { amount: number; is_allocation: boolean }[]): number {
   return transactions.filter((t) => t.amount > 0 && !t.is_allocation).reduce((sum, t) => sum + t.amount, 0)
-}
-
-// Cuánto de este gasto fijo corresponde reservar del presupuesto diario
-// ESTE mes calendario, prorrateado según la frecuencia — solo para
-// categorías con fixed_reserve_ahead = true (decisión configurable por
-// categoría, ver migración 0018). Ej.: 200 Bs cada 2 meses = 100 Bs/mes;
-// 300 Bs cada 15 días en un mes de 30 días = 600 Bs ese mes. 0 si el plan
-// todavía no arrancó o no pidió reservarse por adelantado.
-export function monthlyReserveAmount(
-  c: FixedExpenseReserveConfig,
-  today: DateYMD,
-  daysInThisMonth: number
-): number {
-  if (!c.fixed_reserve_ahead) return 0
-  if (lastFixedExpenseOccurrence(c, today) === null) return 0
-  const amount = c.fixed_amount as number
-  const count = c.fixed_interval_count as number
-  if (c.fixed_interval_unit === 'month') return amount / count
-  return (amount / count) * daysInThisMonth
 }

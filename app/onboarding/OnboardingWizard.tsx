@@ -73,11 +73,6 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
     inversion: '',
   })
 
-  // Gasto: cuánto de tu ingreso se descuenta cada mes para Gasto. Los gastos
-  // fijos salen de ahí; lo que queda es el dinero para el día a día.
-  // null = modo automático: el monto de Gasto es la suma de tus gastos fijos y se
-  // va actualizando mientras los llenas. Si escribes un monto, pasa a manual.
-  const [gastoAmount, setGastoAmount] = useState<string | null>(null)
   const [newDaily, setNewDaily] = useState('')
   const [newDueDate, setNewDueDate] = useState('')
 
@@ -87,21 +82,18 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
   const incomeNumber = Number(income) || 0
   const canContinueIncome = incomeNumber > 0
 
-  // Gastos fijos de Gasto: las categorías marcadas que NO son del día a día.
-  const gastoFixedTotal = cats.gasto
-    .filter((c) => c.checked && !c.daily)
-    .reduce((sum, c) => sum + (Number(c.amount) || 0), 0)
+  // El monto del pilar Gasto es la suma de tus gastos fijos (las categorías
+  // marcadas que NO son del día a día): lo del día a día no lleva monto.
   // Suma a centavos exactos (evita 0,1 + 0,2 = 0,30000000000000004).
-  const gastoFixedSum = Math.round(gastoFixedTotal * 100) / 100
-  const gastoIsAuto = gastoAmount === null
-  const gastoAmountNumber = gastoIsAuto ? 0 : Number(gastoAmount) || 0
-  // En automático, el monto de Gasto es la suma de tus gastos fijos.
-  const gastoPillarAmount = gastoAmountNumber > 0 ? gastoAmountNumber : gastoFixedSum
-  const gastoDailyPool = gastoPillarAmount - gastoFixedTotal
-  const gastoCoversFixed = gastoPillarAmount >= gastoFixedTotal
+  const gastoFixedSum =
+    Math.round(
+      cats.gasto
+        .filter((c) => c.checked && !c.daily)
+        .reduce((sum, c) => sum + (Number(c.amount) || 0), 0) * 100
+    ) / 100
 
   function pillarTotal(pillar: PillarKey) {
-    if (pillar === 'gasto') return gastoPillarAmount
+    if (pillar === 'gasto') return gastoFixedSum
     return cats[pillar]
       .filter((c) => c.checked)
       .reduce((sum, c) => sum + (Number(c.amount) || 0), 0)
@@ -189,7 +181,6 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
       income: incomeNumber,
       autoRepeat,
       categories,
-      gastoAmount: gastoAmountNumber > 0 ? gastoAmountNumber : undefined,
       // La zona horaria del dispositivo: define qué es "hoy" y dónde termina
       // cada mes para este usuario.
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -229,13 +220,16 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
             <p className="mt-2 text-sm text-zinc-500">Así funciona, en 3 ideas:</p>
             <ul className="mt-6 flex flex-col gap-4 text-left">
               <li className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-                Tu plata se divide en <strong>3 pilares</strong>: Ahorro, Gasto e Inversión.
+                Tu plata se divide en <strong>3 pilares</strong>: Ahorro, Gasto (tus gastos fijos) e
+                Inversión. Lo que te sobra es tu <strong>Dinero libre</strong>, y de ahí sale lo que
+                puedes gastar cada día.
               </li>
               <li className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
                 <strong>Tú decides</strong> cuánta plata va a cada categoría dentro de cada pilar.
               </li>
               <li className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-                Cuando te excedas en algo, te decimos <strong>exactamente qué meta</strong> estás sacrificando.
+                Tus gastos del día a día no tienen presupuesto: cada vez que gastas, eliges si sale de tu
+                Dinero libre o de tus ahorros, y ves <strong>exactamente qué meta</strong> estás sacrificando.
               </li>
             </ul>
             <p className="mt-4 text-xs text-zinc-500">
@@ -305,7 +299,7 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
           </section>
         )}
 
-        {/* ---------- Gastos fijos: monto del pilar + fijos con monto y fecha de cobro ---------- */}
+        {/* ---------- Gastos fijos: con monto y fecha de cobro ---------- */}
         {kind === 'gasto-fijos' && (
           <section>
             <h2 className="text-xl font-semibold tracking-tight">Gastos fijos</h2>
@@ -318,47 +312,6 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
               También puedes elegir la <strong>fecha de cobro</strong>: cuando llegue, te avisamos y
               tú confirmas el pago. Nunca se descuenta solo.
             </p>
-
-            <div className="mt-6 flex flex-col gap-1">
-              <label htmlFor="gastoAmount" className="text-sm font-medium">
-                ¿Cuánto de tu ingreso va a Gasto cada mes? (Bs)
-              </label>
-              <input
-                id="gastoAmount"
-                type="number"
-                step="any"
-                onWheel={(e) => e.currentTarget.blur()}
-                inputMode="decimal"
-                min={0}
-                // En automático el campo muestra la suma de tus gastos fijos (vacío si todavía
-                // no hay ninguno); al escribir pasa a manual. Solo el enlace de abajo vuelve al
-                // automático: si vaciar el campo lo devolviera, no se podría borrar el último
-                // dígito (reaparecería la suma).
-                value={gastoIsAuto ? (gastoFixedSum > 0 ? String(gastoFixedSum) : '') : gastoAmount}
-                onChange={(e) => setGastoAmount(e.target.value)}
-                placeholder="Se suma sola con tus gastos fijos"
-                className="rounded-lg border border-zinc-300 px-3 py-2 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
-              />
-              {gastoIsAuto ? (
-                <p className="text-xs text-zinc-500">
-                  Si no sabes el monto exacto, llena tus gastos fijos aquí abajo y se suma solo. Si
-                  quieres dejar plata para el día a día, escribe un monto mayor.
-                </p>
-              ) : (
-                <p className="text-xs text-zinc-500">
-                  {gastoAmount === ''
-                    ? 'Dejaste el campo vacío: Gasto será la suma de tus gastos fijos.'
-                    : 'Escribiste el monto a mano.'}{' '}
-                  <button
-                    type="button"
-                    onClick={() => setGastoAmount(null)}
-                    className="font-medium underline hover:text-zinc-900 dark:hover:text-zinc-100"
-                  >
-                    Usar la suma de mis gastos fijos
-                  </button>
-                </p>
-              )}
-            </div>
 
             <h3 className="mt-6 text-sm font-medium">Tus gastos fijos</h3>
             <div className="mt-2 flex flex-col gap-3">
@@ -462,23 +415,18 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
               </div>
             </div>
 
+            {/* El monto de Gasto es la suma de tus gastos fijos. */}
             <div
               className={`mt-4 rounded-lg px-3 py-2 text-sm ${
-                gastoCoversFixed
+                canContinueAllocation
                   ? 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-400'
                   : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
               }`}
             >
-              {gastoCoversFixed
-                ? `Gasto: ${formatBs(gastoPillarAmount)} Bs. Fijos: ${formatBs(gastoFixedTotal)} Bs. Para el día a día te quedan ${formatBs(gastoDailyPool)} Bs.`
-                : `Tus gastos fijos suman ${formatBs(gastoFixedTotal)} Bs, más que el monto de Gasto (${formatBs(gastoPillarAmount)} Bs).`}
+              {canContinueAllocation
+                ? `Gastos fijos: ${formatBs(gastoFixedSum)} Bs al mes. Te quedan ${formatBs(freeMoney)} Bs libres de tu ingreso (${formatBs(incomeNumber)} Bs).`
+                : `En total llevas asignados ${formatBs(totalAllocated)} Bs, más que tu ingreso (${formatBs(incomeNumber)} Bs).`}
             </div>
-
-            {!canContinueAllocation && (
-              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
-                En total llevas asignados {formatBs(totalAllocated)} Bs, más que tu ingreso ({formatBs(incomeNumber)} Bs).
-              </p>
-            )}
 
             <div className="mt-8 flex gap-3">
               <button
@@ -489,7 +437,7 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
               </button>
               <button
                 onClick={() => setStep(step + 1)}
-                disabled={!canContinueAllocation || !gastoCoversFixed}
+                disabled={!canContinueAllocation}
                 className="flex-1 rounded-lg bg-zinc-900 py-2.5 font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
               >
                 Continuar
@@ -498,25 +446,19 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
           </section>
         )}
 
-        {/* ---------- Gastos del día a día: solo categorías, sin monto ---------- */}
+        {/* ---------- Gastos del día a día: solo categorías, sin monto ni presupuesto ---------- */}
         {kind === 'gasto-diario' && (
           <section>
             <h2 className="text-xl font-semibold tracking-tight">Gastos del día a día</h2>
             <p className="mt-1 text-sm text-zinc-500">
               Son los gastos que no son fijos: la comida, el transporte, las salidas… Aquí solo
-              creas categorías para ordenar lo que gastas cada día. <strong>No llevan monto</strong>:
-              cada vez que gastes algo, lo registras en una de estas categorías.
+              creas categorías para ordenar lo que gastas cada día.
             </p>
-
-            <div className="mt-4 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-              <p className="text-sm text-zinc-500">Lo que gastes sale de tu dinero para el día a día</p>
-              <p className="text-2xl font-semibold tracking-tight tabular-nums">{formatBs(gastoDailyPool)} Bs</p>
-              <p className="mt-1 text-xs text-zinc-500">
-                Es lo que queda de Gasto ({formatBs(gastoPillarAmount)} Bs) después de tus gastos fijos (
-                {formatBs(gastoFixedTotal)} Bs). Repartido en lo que queda de este mes, son unos{' '}
-                {formatBs(gastoDailyPool / previewDaysRemaining)} Bs por día.
-              </p>
-            </div>
+            <p className="mt-2 text-sm text-zinc-500">
+              <strong>No llevan monto ni presupuesto.</strong> Cada vez que gastes algo lo registras
+              en una de estas categorías y eliges de dónde sale la plata: de tu{' '}
+              <strong>Dinero libre</strong> o de tus <strong>ahorros</strong>.
+            </p>
 
             <h3 className="mt-6 text-sm font-medium">Tus categorías del día a día</h3>
             <div className="mt-2 flex flex-col gap-2">

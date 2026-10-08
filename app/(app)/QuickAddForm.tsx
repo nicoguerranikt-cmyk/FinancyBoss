@@ -1,29 +1,30 @@
 'use client'
 
-// Acceso rápido a registrar gasto/ingreso extra (manual.md sección 9, tab
-// Dashboard). Un gasto siempre va al pilar Gasto (manual §5.4: Ahorro e
-// Inversión son intocables para el gasto cotidiano). Un ingreso extra el
-// usuario elige a mano a qué pilar va (manual §3.2).
+// Acceso rápido a registrar un gasto del día a día o un ingreso extra (manual
+// sección 9, tab Dashboard).
 //
-// Efecto dominó v2 (manual §4.3): después de registrar un gasto puede venir
-// un DominoOutcome —
-//   Caso 1: informativo + botón opcional "Cubrir con Ahorro" (no bloquea).
-//   Caso 2: diálogo obligatorio (el discrecional del mes quedó en negativo,
-//   hay que declarar de dónde salió esa plata).
+// Gasto del día a día (migración 0041): no tiene presupuesto propio y no baja
+// el saldo de Gasto — la plata sale de Dinero libre o de una categoría de
+// Ahorro, a elección del usuario en cada gasto. Si el origen no alcanza, se
+// rechaza con un aviso.
+//
+// Ingreso extra (manual §3.2): el usuario elige a mano a qué pilar o categoría
+// va. Nunca a Gasto (Gasto son solo los gastos fijos).
 
 import { useMemo, useState, type FormEvent } from 'react'
-import {
-  coverWithAhorro,
-  registerTransaction,
-  resolveDeficit,
-  type DominoOutcome,
-} from './actions'
+import { registerDailyExpense, registerExtraIncome } from './actions'
 import { registerFreeMoneyMovement } from './mi-dinero/libre/actions'
 import { formatBs } from '@/lib/format'
 
 type PillarName = 'ahorro' | 'gasto' | 'inversion'
 type PillarOption = { id: string; name: PillarName }
-type CategoryOption = { id: string; pillar_id: string; name: string }
+type CategoryOption = {
+  id: string
+  pillar_id: string
+  name: string
+  fixed_amount: number | null
+  is_general: boolean
+}
 
 const PILLAR_LABEL: Record<PillarName, string> = {
   ahorro: 'Ahorro',
@@ -31,116 +32,78 @@ const PILLAR_LABEL: Record<PillarName, string> = {
   inversion: 'Inversión',
 }
 
-// Sentinel de UI (nunca se manda a registerTransaction): dinero libre no es
-// un pilar de verdad, no tiene id en la tabla pillars — un movimiento contra
-// esto va a free_money_transactions (ver ../mi-dinero/libre/actions.ts), no
-// a transactions.
+// Sentinel de UI (nunca se manda al servidor como id): Dinero libre no es un
+// pilar de verdad, no tiene id en la tabla pillars.
 const FREE_MONEY_TARGET = 'libre' as const
 
-type ResolveChoice = 'future_days' | 'ahorro' | 'inversion' | 'debt'
+const selectClass =
+  'rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 outline-none [color-scheme:light] focus:border-brand dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:[color-scheme:dark] dark:focus:border-brand'
+const optionClass = 'bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100'
 
 export default function QuickAddForm({
   pillars,
   categories,
+  freeMoneyTotal,
 }: {
   pillars: PillarOption[]
   categories: CategoryOption[]
+  // Dinero libre disponible ahora (lo que se muestra en el Dashboard).
+  freeMoneyTotal: number
 }) {
-  const gastoPillar = pillars.find((p) => p.name === 'gasto')
   const pillarNameById = useMemo(
     () => Object.fromEntries(pillars.map((p) => [p.id, p.name])),
     [pillars]
   )
+  const gastoPillarId = pillars.find((p) => p.name === 'gasto')?.id
 
-  // Ingreso extra NUNCA va a Gasto (Gasto solo registra gastos, nunca
-  // ingresos — mismo criterio que ya regía para el gasto cotidiano, ahora
-  // explícito acá también): el default es el primer pilar que no sea Gasto.
+  // Categorías del día a día: las de Gasto SIN monto (las que tienen monto son
+  // gastos fijos, que se pagan desde Mi Dinero) y que no son la "general".
+  const dailyCategories = useMemo(
+    () =>
+      categories.filter((c) => c.pillar_id === gastoPillarId && c.fixed_amount === null && !c.is_general),
+    [categories, gastoPillarId]
+  )
+  const ahorroCategories = useMemo(
+    () => categories.filter((c) => pillarNameById[c.pillar_id] === 'ahorro' && !c.is_general),
+    [categories, pillarNameById]
+  )
+
+  // Ingreso extra NUNCA va a Gasto: el default es el primer pilar que no sea Gasto.
   const nonGastoPillars = useMemo(() => pillars.filter((p) => p.name !== 'gasto'), [pillars])
 
   const [type, setType] = useState<'expense' | 'extra_income'>('expense')
-  // pillarId: id de un pilar real (nunca Gasto), o el sentinel FREE_MONEY_TARGET.
-  const [pillarId, setPillarId] = useState<string>(nonGastoPillars[0]?.id ?? '')
-  const [expenseTarget, setExpenseTarget] = useState<'gasto' | typeof FREE_MONEY_TARGET>('gasto')
-  const [categoryId, setCategoryId] = useState('')
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
+
+  // Gasto del día a día.
+  const [dailyCategoryId, setDailyCategoryId] = useState('')
+  const [source, setSource] = useState<'libre' | 'ahorro'>('libre')
+  const [sourceCategoryId, setSourceCategoryId] = useState('')
+
+  // Ingreso extra: id de un pilar real (nunca Gasto), o el sentinel FREE_MONEY_TARGET.
+  const [pillarId, setPillarId] = useState<string>(nonGastoPillars[0]?.id ?? '')
+  const [incomeCategoryId, setIncomeCategoryId] = useState('')
+
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
-  const [domino, setDomino] = useState<DominoOutcome | undefined>(undefined)
-
-  // Caso 1 — botón "Cubrir con Ahorro".
-  const [covering, setCovering] = useState(false)
-  const [covered, setCovered] = useState(false)
-
-  // Caso 2 — diálogo obligatorio.
-  const [resolveChoice, setResolveChoice] = useState<ResolveChoice>('future_days')
-  const [resolveCategoryId, setResolveCategoryId] = useState('')
-  const [debtName, setDebtName] = useState('')
-  const [resolving, setResolving] = useState(false)
-  const [resolved, setResolved] = useState(false)
-  const [resolveError, setResolveError] = useState<string | null>(null)
-
-  // Dinero libre no es un pilar real (no tiene id en `pillars`, no tiene
-  // categorías, no participa del efecto dominó) — cuando el destino elegido
-  // es ese, el movimiento va por otro camino (ver handleSubmit).
-  const isFreeMoneyTarget = type === 'expense' ? expenseTarget === FREE_MONEY_TARGET : pillarId === FREE_MONEY_TARGET
-  const effectivePillarId = type === 'expense' ? gastoPillar?.id ?? '' : pillarId === FREE_MONEY_TARGET ? '' : pillarId
-
-  const categoryOptions = useMemo(
-    () => (isFreeMoneyTarget ? [] : categories.filter((c) => c.pillar_id === effectivePillarId)),
-    [categories, effectivePillarId, isFreeMoneyTarget]
+  const isFreeMoneyIncome = pillarId === FREE_MONEY_TARGET
+  const incomeCategoryOptions = useMemo(
+    () => (isFreeMoneyIncome ? [] : categories.filter((c) => c.pillar_id === pillarId && !c.is_general)),
+    [categories, pillarId, isFreeMoneyIncome]
   )
-
-  const ahorroCategoryOptions = useMemo(
-    () => categories.filter((c) => pillarNameById[c.pillar_id] === 'ahorro'),
-    [categories, pillarNameById]
-  )
-  const inversionCategoryOptions = useMemo(
-    () => categories.filter((c) => pillarNameById[c.pillar_id] === 'inversion'),
-    [categories, pillarNameById]
-  )
-
-  function resetDominoState() {
-    setDomino(undefined)
-    setCovering(false)
-    setCovered(false)
-    setResolveChoice('future_days')
-    setResolveCategoryId('')
-    setDebtName('')
-    setResolving(false)
-    setResolved(false)
-    setResolveError(null)
-  }
 
   function handleTypeChange(next: 'expense' | 'extra_income') {
     setType(next)
-    setCategoryId('')
+    setError(null)
     setSuccess(false)
-    resetDominoState()
-    if (next === 'extra_income' && (!pillarId || pillarId === gastoPillar?.id)) {
-      setPillarId(nonGastoPillars[0]?.id ?? '')
-    }
-  }
-
-  function handleExpenseTargetChange(next: 'gasto' | typeof FREE_MONEY_TARGET) {
-    setExpenseTarget(next)
-    setCategoryId('')
-    setSuccess(false)
-    resetDominoState()
-  }
-
-  function handlePillarChange(next: string) {
-    setPillarId(next)
-    setCategoryId('')
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
     setSuccess(false)
-    resetDominoState()
 
     const amountNumber = Number(amount)
     if (!(amountNumber > 0)) {
@@ -148,123 +111,56 @@ export default function QuickAddForm({
       return
     }
 
-    // Dinero libre no es un pilar: no pasa por registerTransaction (ni por
-    // el efecto dominó, que solo aplica a pilares/categorías reales) — es un
-    // movimiento aparte que cae en el mismo historial que /mi-dinero/libre.
-    if (isFreeMoneyTarget) {
-      setSubmitting(true)
-      const res = await registerFreeMoneyMovement({
-        type: type === 'expense' ? 'gasto' : 'ingreso',
-        amount: amountNumber,
-        description: description.trim() || undefined,
-      })
-      setSubmitting(false)
+    if (type === 'expense' && source === 'ahorro' && !sourceCategoryId) {
+      setError('Elige de qué categoría de Ahorro sale.')
+      return
+    }
+    if (type === 'extra_income' && !pillarId) {
+      setError('Elige un pilar.')
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      let res: { error?: string }
+      if (type === 'expense') {
+        res = await registerDailyExpense({
+          categoryId: dailyCategoryId || null,
+          amount: amountNumber,
+          description: description.trim() || undefined,
+          source,
+          sourceCategoryId: source === 'ahorro' ? sourceCategoryId : null,
+        })
+      } else if (isFreeMoneyIncome) {
+        // Dinero libre no es un pilar: el ingreso va a free_money_transactions.
+        res = await registerFreeMoneyMovement({
+          type: 'ingreso',
+          amount: amountNumber,
+          description: description.trim() || undefined,
+        })
+      } else {
+        res = await registerExtraIncome({
+          pillarId,
+          categoryId: incomeCategoryId || null,
+          amount: amountNumber,
+          description: description.trim() || undefined,
+        })
+      }
+
       if (res.error) {
         setError(res.error)
         return
       }
       setAmount('')
       setDescription('')
+      setDailyCategoryId('')
+      setIncomeCategoryId('')
       setSuccess(true)
-      return
+    } catch {
+      setError('No pudimos guardar el movimiento. Revisa tu conexión y prueba de nuevo.')
+    } finally {
+      setSubmitting(false)
     }
-
-    if (!effectivePillarId) {
-      setError('Elige un pilar.')
-      return
-    }
-
-    setSubmitting(true)
-    const res = await registerTransaction({
-      type,
-      pillarId: effectivePillarId,
-      categoryId: categoryId || null,
-      amount: amountNumber,
-      description: description.trim() || undefined,
-    })
-    setSubmitting(false)
-
-    if (res?.error) {
-      setError(res.error)
-      return
-    }
-
-    setAmount('')
-    setDescription('')
-    setCategoryId('')
-    setSuccess(true)
-    setDomino(res?.domino)
-  }
-
-  async function handleCover() {
-    if (domino?.case !== 1) return
-    setCovering(true)
-    const res = await coverWithAhorro({
-      transactionId: domino.transactionId,
-      sourceCategoryId: domino.sourceCategoryId,
-      amount: domino.amount,
-    })
-    setCovering(false)
-    if (res.error) {
-      setResolveError(res.error)
-      return
-    }
-    setCovered(true)
-  }
-
-  async function handleResolve() {
-    if (domino?.case !== 2) return
-    setResolveError(null)
-
-    if ((resolveChoice === 'ahorro' || resolveChoice === 'inversion') && !resolveCategoryId) {
-      setResolveError('Elige una subcategoría.')
-      return
-    }
-    if (resolveChoice === 'debt' && !debtName.trim()) {
-      setResolveError('Ingresa quién te prestó la plata.')
-      return
-    }
-
-    setResolving(true)
-    const res = await resolveDeficit({
-      choice: resolveChoice,
-      transactionId: domino.transactionId,
-      sourceCategoryId: domino.sourceCategoryId,
-      amount: domino.deficitAmount,
-      categoryId: resolveCategoryId || undefined,
-      debtName: debtName || undefined,
-    })
-    setResolving(false)
-
-    if (res.error) {
-      setResolveError(res.error)
-      return
-    }
-    setResolved(true)
-  }
-
-  // "Ingreso extra que no registré" (Caso 2): la plata que cubrió el
-  // déficit SÍ entró a Gasto de verdad (por eso el hueco ya no está) — es la
-  // única situación donde un ingreso extra puede ir a Gasto, y por eso no
-  // pasa por el combo de pilar de arriba (que ya no ofrece Gasto): se
-  // registra directo, sin que el usuario tenga que elegir nada más.
-  async function handleUseExtraIncome() {
-    if (domino?.case !== 2 || !gastoPillar) return
-    setResolveError(null)
-    setResolving(true)
-    const res = await registerTransaction({
-      type: 'extra_income',
-      pillarId: gastoPillar.id,
-      categoryId: null,
-      amount: domino.deficitAmount,
-      description: 'Ingreso extra que no había registrado',
-    })
-    setResolving(false)
-    if (res?.error) {
-      setResolveError(res.error)
-      return
-    }
-    setResolved(true)
   }
 
   return (
@@ -306,7 +202,7 @@ export default function QuickAddForm({
             id="qa-amount"
             type="number"
             step="any"
-              onWheel={(e) => e.currentTarget.blur()}
+            onWheel={(e) => e.currentTarget.blur()}
             inputMode="decimal"
             min={0}
             value={amount}
@@ -317,74 +213,129 @@ export default function QuickAddForm({
         </div>
 
         {type === 'expense' && (
-          <div className="flex flex-col gap-1">
-            <label htmlFor="qa-expense-target" className="text-sm font-medium">
-              Sale de
-            </label>
-            <select
-              id="qa-expense-target"
-              value={expenseTarget}
-              onChange={(e) => handleExpenseTargetChange(e.target.value as 'gasto' | typeof FREE_MONEY_TARGET)}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 outline-none [color-scheme:light] focus:border-brand dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:[color-scheme:dark] dark:focus:border-brand"
-            >
-              <option value="gasto" className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
-                Gasto
-              </option>
-              <option value={FREE_MONEY_TARGET} className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
-                Dinero libre
-              </option>
-            </select>
-          </div>
+          <>
+            <div className="flex flex-col gap-1">
+              <label htmlFor="qa-daily-category" className="text-sm font-medium">
+                Categoría (opcional)
+              </label>
+              <select
+                id="qa-daily-category"
+                value={dailyCategoryId}
+                onChange={(e) => setDailyCategoryId(e.target.value)}
+                className={selectClass}
+              >
+                <option value="" className={optionClass}>
+                  Sin categoría
+                </option>
+                {dailyCategories.map((c) => (
+                  <option key={c.id} value={c.id} className={optionClass}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              {dailyCategories.length === 0 && (
+                <p className="text-xs text-zinc-500">
+                  Todavía no tienes categorías del día a día. Puedes crearlas en Mi Dinero → Gasto.
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label htmlFor="qa-source" className="text-sm font-medium">
+                Sale de
+              </label>
+              <select
+                id="qa-source"
+                value={source}
+                onChange={(e) => {
+                  setSource(e.target.value as 'libre' | 'ahorro')
+                  setSourceCategoryId('')
+                }}
+                className={selectClass}
+              >
+                <option value="libre" className={optionClass}>
+                  Dinero libre
+                </option>
+                <option value="ahorro" className={optionClass}>
+                  Ahorro
+                </option>
+              </select>
+              {source === 'libre' ? (
+                <p className="text-xs text-zinc-500">Te quedan {formatBs(freeMoneyTotal)} Bs de Dinero libre.</p>
+              ) : (
+                <select
+                  aria-label="Categoría de Ahorro de la que sale"
+                  value={sourceCategoryId}
+                  onChange={(e) => setSourceCategoryId(e.target.value)}
+                  className={`mt-1 ${selectClass}`}
+                >
+                  <option value="" className={optionClass}>
+                    Elige una categoría de Ahorro
+                  </option>
+                  {ahorroCategories.map((c) => (
+                    <option key={c.id} value={c.id} className={optionClass}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </>
         )}
 
         {type === 'extra_income' && (
-          <div className="flex flex-col gap-1">
-            <label htmlFor="qa-pillar" className="text-sm font-medium">
-              Pilar
-            </label>
-            <select
-              id="qa-pillar"
-              value={pillarId}
-              onChange={(e) => handlePillarChange(e.target.value)}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 outline-none [color-scheme:light] focus:border-brand dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:[color-scheme:dark] dark:focus:border-brand"
-            >
-              {nonGastoPillars.map((p) => (
-                <option key={p.id} value={p.id} className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
-                  {PILLAR_LABEL[p.name]}
+          <>
+            <div className="flex flex-col gap-1">
+              <label htmlFor="qa-pillar" className="text-sm font-medium">
+                Pilar
+              </label>
+              <select
+                id="qa-pillar"
+                value={pillarId}
+                onChange={(e) => {
+                  setPillarId(e.target.value)
+                  setIncomeCategoryId('')
+                }}
+                className={selectClass}
+              >
+                {nonGastoPillars.map((p) => (
+                  <option key={p.id} value={p.id} className={optionClass}>
+                    {PILLAR_LABEL[p.name]}
+                  </option>
+                ))}
+                <option value={FREE_MONEY_TARGET} className={optionClass}>
+                  Dinero libre
                 </option>
-              ))}
-              <option value={FREE_MONEY_TARGET} className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
-                Dinero libre
-              </option>
-            </select>
-            <p className="text-xs text-zinc-500">
-              Gasto no puede recibir ingresos — solo registra gastos. Si necesitas más presupuesto
-              para un gasto fijo puntual, configúralo directo en esa categoría, en Gastos fijos.
-            </p>
-          </div>
-        )}
+              </select>
+              <p className="text-xs text-zinc-500">
+                Gasto no puede recibir ingresos: son solo tus gastos fijos. Si necesitas más plata para
+                un gasto fijo este mes, aumenta su presupuesto desde esa categoría.
+              </p>
+            </div>
 
-        {categoryOptions.length > 0 && (
-          <div className="flex flex-col gap-1">
-            <label htmlFor="qa-category" className="text-sm font-medium">
-              Categoría (opcional)
-            </label>
-            <select
-              id="qa-category"
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 outline-none [color-scheme:light] focus:border-brand dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:[color-scheme:dark] dark:focus:border-brand"
-            >
-              <option value="" className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
-                Sin categoría (va directo al pilar)
-              </option>
-              {categoryOptions.map((c) => (
-                <option key={c.id} value={c.id} className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
+            {incomeCategoryOptions.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <label htmlFor="qa-category" className="text-sm font-medium">
+                  Categoría (opcional)
+                </label>
+                <select
+                  id="qa-category"
+                  value={incomeCategoryId}
+                  onChange={(e) => setIncomeCategoryId(e.target.value)}
+                  className={selectClass}
+                >
+                  <option value="" className={optionClass}>
+                    Sin categoría (va directo al pilar)
+                  </option>
+                  {incomeCategoryOptions.map((c) => (
+                    <option key={c.id} value={c.id} className={optionClass}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </>
         )}
 
         <div className="flex flex-col gap-1">
@@ -409,145 +360,6 @@ export default function QuickAddForm({
       )}
       {success && !error && (
         <p className="mt-3 text-sm text-green-700 dark:text-green-400">Movimiento registrado.</p>
-      )}
-
-      {/* Caso 1: informativo, no bloquea. */}
-      {domino?.case === 1 && (
-        <div className="mt-3 rounded-lg bg-amber-50 p-3 dark:bg-amber-950/40">
-          <p className="text-sm text-amber-800 dark:text-amber-300">{domino.message}</p>
-          {covered ? (
-            <p className="mt-2 text-sm text-green-700 dark:text-green-400">Cubierto con tu Ahorro.</p>
-          ) : (
-            <button
-              type="button"
-              onClick={handleCover}
-              disabled={covering}
-              className="mt-2 rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-100 disabled:opacity-50 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-900/40"
-            >
-              {covering ? 'Cubriendo…' : 'Cubrir con Ahorro'}
-            </button>
-          )}
-          {resolveError && <p className="mt-2 text-xs text-red-600">{resolveError}</p>}
-        </div>
-      )}
-
-      {/* Caso 2: el discrecional del mes quedó en negativo — hay que declarar el origen. */}
-      {domino?.case === 2 && (
-        <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-900 dark:bg-red-950/40">
-          {resolved ? (
-            <p className="text-sm text-green-700 dark:text-green-400">Registrado.</p>
-          ) : (
-            <>
-              <p className="text-sm font-medium text-red-700 dark:text-red-400">
-                Te faltan {formatBs(domino.deficitAmount)} Bs. ¿De dónde salieron?
-              </p>
-
-              <div className="mt-2 flex flex-col gap-2">
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    name="resolve-choice"
-                    checked={resolveChoice === 'future_days'}
-                    onChange={() => setResolveChoice('future_days')}
-                  />
-                  Del presupuesto de los próximos días
-                </label>
-
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    name="resolve-choice"
-                    checked={resolveChoice === 'ahorro'}
-                    onChange={() => setResolveChoice('ahorro')}
-                  />
-                  De Ahorro
-                </label>
-                {resolveChoice === 'ahorro' && (
-                  <select
-                    value={resolveCategoryId}
-                    onChange={(e) => setResolveCategoryId(e.target.value)}
-                    className="ml-6 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 outline-none [color-scheme:light] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:[color-scheme:dark]"
-                  >
-                    <option value="" className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
-                      Elige una subcategoría
-                    </option>
-                    {ahorroCategoryOptions.map((c) => (
-                      <option key={c.id} value={c.id} className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    name="resolve-choice"
-                    checked={resolveChoice === 'inversion'}
-                    onChange={() => setResolveChoice('inversion')}
-                  />
-                  De Inversión
-                </label>
-                {resolveChoice === 'inversion' && (
-                  <select
-                    value={resolveCategoryId}
-                    onChange={(e) => setResolveCategoryId(e.target.value)}
-                    className="ml-6 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 outline-none [color-scheme:light] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:[color-scheme:dark]"
-                  >
-                    <option value="" className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
-                      Elige una subcategoría
-                    </option>
-                    {inversionCategoryOptions.map((c) => (
-                      <option key={c.id} value={c.id} className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    name="resolve-choice"
-                    checked={resolveChoice === 'debt'}
-                    onChange={() => setResolveChoice('debt')}
-                  />
-                  Alguien me lo prestó
-                </label>
-                {resolveChoice === 'debt' && (
-                  <input
-                    type="text"
-                    value={debtName}
-                    onChange={(e) => setDebtName(e.target.value)}
-                    placeholder="¿Quién te prestó?"
-                    className="ml-6 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
-                  />
-                )}
-              </div>
-
-              {resolveError && <p className="mt-2 text-xs text-red-600">{resolveError}</p>}
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={handleResolve}
-                  disabled={resolving}
-                  className="rounded-lg bg-red-700 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-800 disabled:opacity-50"
-                >
-                  {resolving ? 'Guardando…' : 'Confirmar'}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleUseExtraIncome}
-                  disabled={resolving}
-                  className="text-xs text-red-700 underline disabled:opacity-50 dark:text-red-400"
-                >
-                  {resolving ? 'Guardando…' : 'Ingreso extra que no registré'}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
       )}
 
       <button
