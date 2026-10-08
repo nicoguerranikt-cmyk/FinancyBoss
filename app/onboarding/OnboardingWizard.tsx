@@ -331,9 +331,11 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
                 inputMode="decimal"
                 min={0}
                 // En automático el campo muestra la suma de tus gastos fijos (vacío si todavía
-                // no hay ninguno); al escribir pasa a manual. Vaciarlo vuelve al automático.
+                // no hay ninguno); al escribir pasa a manual. Solo el enlace de abajo vuelve al
+                // automático: si vaciar el campo lo devolviera, no se podría borrar el último
+                // dígito (reaparecería la suma).
                 value={gastoIsAuto ? (gastoFixedSum > 0 ? String(gastoFixedSum) : '') : gastoAmount}
-                onChange={(e) => setGastoAmount(e.target.value === '' ? null : e.target.value)}
+                onChange={(e) => setGastoAmount(e.target.value)}
                 placeholder="Se suma sola con tus gastos fijos"
                 className="rounded-lg border border-zinc-300 px-3 py-2 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
               />
@@ -344,7 +346,9 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
                 </p>
               ) : (
                 <p className="text-xs text-zinc-500">
-                  Escribiste el monto a mano.{' '}
+                  {gastoAmount === ''
+                    ? 'Dejaste el campo vacío: Gasto será la suma de tus gastos fijos.'
+                    : 'Escribiste el monto a mano.'}{' '}
                   <button
                     type="button"
                     onClick={() => setGastoAmount(null)}
