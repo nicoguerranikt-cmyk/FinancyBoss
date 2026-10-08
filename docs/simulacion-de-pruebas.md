@@ -33,8 +33,8 @@ Los números de esta guía los comprueba el test [`lib/simulacion.test.ts`](../l
 | 1.5 | Ingreso **3000**, "repetir cada mes" **activado** | Puedes continuar |
 | 1.6 | **Ahorro:** marca `Fondo de emergencia` y ponle monto **300** (desmarca las demás) | — |
 | 1.7 | Llegas a la pantalla **Gastos fijos** | Explica que aquí van los gastos que pagas todos los meses (alquiler, suscripciones…), que el monto se descuenta de tu ingreso, y que puedes elegir una **fecha de cobro** |
-| 1.8 | En "¿Cuánto de tu ingreso va a Gasto cada mes?" escribe **1300,50** | Escribe con centavos: no se redondea |
-| 1.9 | En "Tus gastos fijos" marca `Alquiler` con **800** (desmarca los demás) y pon **fecha de cobro = hoy** | Al poner el monto aparece el campo "Fecha de cobro (opcional)". La línea dice: Gasto 1.300,50 · Fijos 800 · **para el día a día te quedan 500,50 Bs** |
+| 1.8 | En "Tus gastos fijos" marca `Alquiler` con **800** (desmarca los demás) y pon **fecha de cobro = hoy** | Al poner el monto aparece el campo "Fecha de cobro (opcional)". **El campo de arriba ("¿Cuánto de tu ingreso va a Gasto?") se llena solo con 800** (se suma con tus gastos fijos) |
+| 1.9 | En ese campo de arriba escribe **1300,50** (para dejar plata para el día a día) | Pasa a modo manual: aparece "Usar la suma de mis gastos fijos". Escribe con centavos: no se redondea. La línea dice: Gasto 1.300,50 · Fijos 800 · **para el día a día te quedan 500,50 Bs** |
 | 1.10 | Pulsa **Continuar** | Pasas a la pantalla **Gastos del día a día** (aparte) |
 | 1.11 | Léela y marca `Comida` y `Transporte` | Explica que son los gastos que no son fijos y que **no llevan monto**. Muestra "500,50 Bs" para el día a día. **No hay ningún campo de monto** en esa lista |
 | 1.12 | **Inversión:** marca una categoría `Acciones` y ponle **200** | Resumen: total asignado **1.800,50**, libre **1.199,50** |

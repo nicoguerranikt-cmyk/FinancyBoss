@@ -75,7 +75,9 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
 
   // Gasto: cuánto de tu ingreso se descuenta cada mes para Gasto. Los gastos
   // fijos salen de ahí; lo que queda es el dinero para el día a día.
-  const [gastoAmount, setGastoAmount] = useState('')
+  // null = modo automático: el monto de Gasto es la suma de tus gastos fijos y se
+  // va actualizando mientras los llenas. Si escribes un monto, pasa a manual.
+  const [gastoAmount, setGastoAmount] = useState<string | null>(null)
   const [newDaily, setNewDaily] = useState('')
   const [newDueDate, setNewDueDate] = useState('')
 
@@ -89,9 +91,12 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
   const gastoFixedTotal = cats.gasto
     .filter((c) => c.checked && !c.daily)
     .reduce((sum, c) => sum + (Number(c.amount) || 0), 0)
-  const gastoAmountNumber = Number(gastoAmount) || 0
-  // Si no escribes el monto de Gasto, es la suma de tus gastos fijos.
-  const gastoPillarAmount = gastoAmountNumber > 0 ? gastoAmountNumber : gastoFixedTotal
+  // Suma a centavos exactos (evita 0,1 + 0,2 = 0,30000000000000004).
+  const gastoFixedSum = Math.round(gastoFixedTotal * 100) / 100
+  const gastoIsAuto = gastoAmount === null
+  const gastoAmountNumber = gastoIsAuto ? 0 : Number(gastoAmount) || 0
+  // En automático, el monto de Gasto es la suma de tus gastos fijos.
+  const gastoPillarAmount = gastoAmountNumber > 0 ? gastoAmountNumber : gastoFixedSum
   const gastoDailyPool = gastoPillarAmount - gastoFixedTotal
   const gastoCoversFixed = gastoPillarAmount >= gastoFixedTotal
 
@@ -325,15 +330,30 @@ export default function OnboardingWizard({ userName }: { userName: string }) {
                 onWheel={(e) => e.currentTarget.blur()}
                 inputMode="decimal"
                 min={0}
-                value={gastoAmount}
-                onChange={(e) => setGastoAmount(e.target.value)}
-                placeholder="Ej. 1300"
+                // En automático el campo muestra la suma de tus gastos fijos (vacío si todavía
+                // no hay ninguno); al escribir pasa a manual. Vaciarlo vuelve al automático.
+                value={gastoIsAuto ? (gastoFixedSum > 0 ? String(gastoFixedSum) : '') : gastoAmount}
+                onChange={(e) => setGastoAmount(e.target.value === '' ? null : e.target.value)}
+                placeholder="Se suma sola con tus gastos fijos"
                 className="rounded-lg border border-zinc-300 px-3 py-2 outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-100"
               />
-              <p className="text-xs text-zinc-500">
-                Incluye tus gastos fijos y lo que quieras tener para el día a día (lo ves en el
-                paso siguiente). Si lo dejas vacío, Gasto es solo la suma de tus gastos fijos.
-              </p>
+              {gastoIsAuto ? (
+                <p className="text-xs text-zinc-500">
+                  Si no sabes el monto exacto, llena tus gastos fijos aquí abajo y se suma solo. Si
+                  quieres dejar plata para el día a día, escribe un monto mayor.
+                </p>
+              ) : (
+                <p className="text-xs text-zinc-500">
+                  Escribiste el monto a mano.{' '}
+                  <button
+                    type="button"
+                    onClick={() => setGastoAmount(null)}
+                    className="font-medium underline hover:text-zinc-900 dark:hover:text-zinc-100"
+                  >
+                    Usar la suma de mis gastos fijos
+                  </button>
+                </p>
+              )}
             </div>
 
             <h3 className="mt-6 text-sm font-medium">Tus gastos fijos</h3>
